@@ -1,0 +1,23 @@
+# Git and env
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+
+# Build artifacts (we build inside the image)
+target/
+
+# IDE and OS
+.idea
+.vscode
+.DS_Store
+
+# Docs and tooling (not needed in image)
+*.md
+!README.md
+postman/
+.dockerignore
+
+# Tests (not needed for production binary)
+tests/

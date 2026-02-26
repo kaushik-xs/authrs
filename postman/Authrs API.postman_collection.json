@@ -1,0 +1,196 @@
+{
+  "info": {
+    "name": "Authrs API",
+    "description": "Multi-tenant auth: users, roles (assigned only to users), permissions. All relevant routes require header X-Tenant-ID unless noted.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "tenantId", "value": "test" },
+    { "key": "sessionToken", "value": "" },
+    { "key": "userId", "value": "" },
+    { "key": "roleId", "value": "" },
+    { "key": "firstName", "value": "Kaushik" },
+    { "key": "lastName", "value": "Sundar" },
+    { "key": "email", "value": "kaushik-xs@gmail.com" },
+    { "key": "password", "value": "secret" },
+    { "key": "retypePassword", "value": "secret" },
+    { "key": "otpIdentifier", "value": "kaushik-xs@gmail.com" },
+    { "key": "otpCode", "value": "123456" },
+    { "key": "otpChannel", "value": "email" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Signup",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"{{firstName}}\",\n  \"lastName\": \"{{lastName}}\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"retypePassword\": \"{{retypePassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/signup"
+          }
+        },
+        {
+          "name": "Login (email + password)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.sessionToken) {",
+                  "    pm.collectionVariables.set('sessionToken', json.sessionToken);",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": "{{baseUrl}}/login/email-password"
+          }
+        },
+        {
+          "name": "Login (email OTP request)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\"\n}"
+            },
+            "url": "{{baseUrl}}/login/email-otp/request"
+          }
+        },
+        {
+          "name": "Login (OTP verify)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.sessionToken) {",
+                  "    pm.collectionVariables.set('sessionToken', json.sessionToken);",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{otpIdentifier}}\",\n  \"code\": \"{{otpCode}}\",\n  \"channel\": \"{{otpChannel}}\"\n}"
+            },
+            "url": "{{baseUrl}}/login/otp/verify"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Session",
+      "item": [
+        {
+          "name": "Validate session",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{sessionToken}}" }
+            ],
+            "url": "{{baseUrl}}/session/validate"
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{sessionToken}}" }
+            ],
+            "url": "{{baseUrl}}/session/logout"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "List user roles",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": "{{baseUrl}}/admin/users/{{userId}}/roles"
+          }
+        },
+        {
+          "name": "Assign role to user",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roleId\": \"{{roleId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/admin/users/{{userId}}/roles"
+          }
+        },
+        {
+          "name": "Remove role from user",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": "{{baseUrl}}/admin/users/{{userId}}/roles/{{roleId}}"
+          }
+        },
+        {
+          "name": "List roles",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": "{{baseUrl}}/admin/roles"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+//! RBAC middleware: check permission.

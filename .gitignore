@@ -1,0 +1,42 @@
+# Rust
+/target/
+**/*.rs.bk
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+*.pem
+
+# IDE and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build and debug
+*.pdb
+*.so
+*.dylib
+
+# SQLx offline cache (optional; remove if you want to commit it)
+.sqlx/
+
+# Logs and temp
+*.log
+/tmp/
+/temp/
+
+# Postman (optional: ignore local env with secrets)
+# postman/*.postman_environment.json
+
+# Test and coverage
+coverage/
+*.profraw
+*.profdata
+
+docker-compose.yml
