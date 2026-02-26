@@ -131,6 +131,16 @@
           }
         },
         {
+          "name": "Get current user (me)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{sessionToken}}" }
+            ],
+            "url": "{{baseUrl}}/session/me"
+          }
+        },
+        {
           "name": "Logout",
           "request": {
             "method": "POST",

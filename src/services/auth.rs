@@ -60,6 +60,11 @@ impl AuthService {
         &self.roles_repo
     }
 
+    /// For session/me and other routes that need to load user by id.
+    pub fn users_repo(&self) -> &UsersRepo {
+        &self.users_repo
+    }
+
     /// Effective login methods = intersection of tenant allowed, group allowed, user supported.
     fn user_supported_methods(user: &User) -> Vec<i32> {
         let mut methods = Vec::new();

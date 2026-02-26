@@ -24,6 +24,7 @@ fn bearer_token(headers: &axum::http::HeaderMap) -> Result<&str, AppError> {
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/validate", get(session_validate))
+        .route("/me", get(session_me))
         .route("/logout", post(logout))
         .route("/logout/all", post(logout_all))
 }
@@ -44,6 +45,33 @@ async fn session_validate(
         "roles": payload.roles,
         "permissions": payload.permissions,
         "expiresAt": payload.expires_at.to_rfc3339()
+    })))
+}
+
+async fn session_me(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let session_token = bearer_token(&headers)?;
+    let payload = state
+        .session_store
+        .get(session_token)
+        .await?
+        .ok_or_else(|| AppError::Unauthorized("Invalid or expired session".to_string()))?;
+    let user = state
+        .auth_service
+        .users_repo()
+        .get_by_id(&payload.tenant_id, payload.user_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+    let user_json = serde_json::to_value(&user).map_err(|e| AppError::Internal(e.to_string()))?;
+    Ok(Json(serde_json::json!({
+        "tenantId": payload.tenant_id,
+        "userId": payload.user_id,
+        "roles": payload.roles,
+        "permissions": payload.permissions,
+        "expiresAt": payload.expires_at.to_rfc3339(),
+        "user": user_json
     })))
 }
 

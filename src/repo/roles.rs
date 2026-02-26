@@ -98,6 +98,20 @@ impl RolesRepo {
         Ok(r.rows_affected() > 0)
     }
 
+    /// List all roles for a tenant (id, name).
+    pub async fn list_roles(
+        &self,
+        tenant_id: &str,
+    ) -> Result<Vec<(Uuid, String)>, AppError> {
+        let rows = sqlx::query_as::<_, (Uuid, String)>(
+            "SELECT id, name FROM auth.roles WHERE tenant_id = $1 ORDER BY name",
+        )
+        .bind(tenant_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
     /// Get role id by tenant and role name.
     pub async fn get_role_id_by_name(
         &self,

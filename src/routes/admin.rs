@@ -89,8 +89,20 @@ async fn admin_list_users() -> &'static str {
 async fn admin_create_role() -> &'static str {
     "admin create role placeholder"
 }
-async fn admin_list_roles() -> &'static str {
-    "admin list roles placeholder"
+async fn admin_list_roles(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let roles = state
+        .auth_service
+        .roles_repo()
+        .list_roles(&tenant_id.0)
+        .await?;
+    let roles_json: Vec<serde_json::Value> = roles
+        .into_iter()
+        .map(|(id, name)| serde_json::json!({ "id": id, "name": name }))
+        .collect();
+    Ok(Json(serde_json::json!({ "roles": roles_json })))
 }
 async fn admin_create_permission() -> &'static str {
     "admin create permission placeholder"
