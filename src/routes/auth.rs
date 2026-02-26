@@ -102,7 +102,6 @@ async fn signup(
         axum::http::StatusCode::CREATED,
         Json(serde_json::json!({
             "id": user.id,
-            "tenantId": user.tenant_id,
             "firstName": user.first_name,
             "lastName": user.last_name,
             "email": user.email,

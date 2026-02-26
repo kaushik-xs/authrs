@@ -7,6 +7,7 @@ use uuid::Uuid;
 #[serde(rename_all = "camelCase")]
 pub struct User {
     pub id: Uuid,
+    #[serde(skip_serializing)]
     pub tenant_id: String,
     pub first_name: Option<String>,
     pub last_name: Option<String>,

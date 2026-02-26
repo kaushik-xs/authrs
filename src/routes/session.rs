@@ -66,7 +66,6 @@ async fn session_me(
         .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
     let user_json = serde_json::to_value(&user).map_err(|e| AppError::Internal(e.to_string()))?;
     Ok(Json(serde_json::json!({
-        "tenantId": payload.tenant_id,
         "userId": payload.user_id,
         "roles": payload.roles,
         "permissions": payload.permissions,
