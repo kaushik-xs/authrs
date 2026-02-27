@@ -45,3 +45,41 @@ pub async fn send_otp_email(
     Ok(())
 }
 
+/// Send password reset email with the token. Caller should include reset link or token for the user.
+pub async fn send_password_reset_email(
+    smtp: &SmtpConfig,
+    to_email: &str,
+    token: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let from_addr = smtp.from.parse()?;
+    let to_addr = to_email.parse()?;
+
+    let body = format!(
+        "You requested a password reset. Use the following token to set a new password:\n\n{}\n\nThis token expires in 1 hour. If you did not request this, please ignore this email.",
+        token
+    );
+
+    let message = Message::builder()
+        .from(from_addr)
+        .to(to_addr)
+        .subject("Password reset")
+        .header(ContentType::TEXT_PLAIN)
+        .body(body)?;
+
+    let mut builder = if smtp.port == 465 {
+        AsyncSmtpTransport::<Tokio1Executor>::relay(&smtp.host)?
+    } else {
+        AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&smtp.host)?
+    };
+
+    builder = builder.port(smtp.port).timeout(Some(Duration::from_secs(30)));
+
+    if let (Some(u), Some(p)) = (&smtp.user, &smtp.pass) {
+        builder = builder.credentials(Credentials::new(u.clone(), p.clone()));
+    }
+
+    let mailer = builder.build();
+    mailer.send(message).await?;
+    Ok(())
+}
+

@@ -1,4 +1,5 @@
 pub mod users;
+pub mod password_reset_tokens;
 pub mod tenants;
 pub mod kv_store;
 pub mod sessions_redis;

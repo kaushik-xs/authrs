@@ -13,6 +13,13 @@ use crate::api::tenant::TenantId;
 use crate::error::AppError;
 use std::sync::Arc;
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminResetPasswordBody {
+    new_password: String,
+    retype_password: String,
+}
+
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/users", post(admin_create_user))
@@ -20,6 +27,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/users/:user_id/roles", get(admin_list_user_roles))
         .route("/users/:user_id/roles", post(admin_assign_role_to_user))
         .route("/users/:user_id/roles/:role_id", delete(admin_remove_role_from_user))
+        .route("/users/:user_id/reset-password", post(admin_reset_password))
         .route("/roles", post(admin_create_role))
         .route("/roles", get(admin_list_roles))
         .route("/permissions", post(admin_create_permission))
@@ -80,6 +88,28 @@ async fn admin_remove_role_from_user(
     }
     Ok(Json(serde_json::json!({ "message": "Role removed from user" })))
 }
+
+async fn admin_reset_password(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Path(user_id): Path<Uuid>,
+    Json(body): Json<AdminResetPasswordBody>,
+) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), AppError> {
+    state
+        .auth_service
+        .admin_reset_password(
+            &tenant_id.0,
+            user_id,
+            &body.new_password,
+            &body.retype_password,
+        )
+        .await?;
+    Ok((
+        axum::http::StatusCode::OK,
+        Json(serde_json::json!({ "message": "Password reset successfully." })),
+    ))
+}
+
 async fn admin_create_user() -> &'static str {
     "admin create user placeholder"
 }

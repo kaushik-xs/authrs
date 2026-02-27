@@ -1,4 +1,4 @@
-//! Session routes: validate, logout, logout all.
+//! Session routes: validate, logout, logout all, change password.
 
 use axum::{
     extract::State,
@@ -6,6 +6,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::api::state::AppState;
@@ -21,10 +22,19 @@ fn bearer_token(headers: &axum::http::HeaderMap) -> Result<&str, AppError> {
         .ok_or_else(|| AppError::Unauthorized("Invalid Authorization header".to_string()))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChangePasswordBody {
+    current_password: String,
+    new_password: String,
+    retype_password: String,
+}
+
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/validate", get(session_validate))
         .route("/me", get(session_me))
+        .route("/change-password", post(change_password))
         .route("/logout", post(logout))
         .route("/logout/all", post(logout_all))
 }
@@ -71,6 +81,32 @@ async fn session_me(
         "permissions": payload.permissions,
         "expiresAt": payload.expires_at.to_rfc3339(),
         "user": user_json
+    })))
+}
+
+async fn change_password(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<ChangePasswordBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let session_token = bearer_token(&headers)?;
+    let payload = state
+        .session_store
+        .get(session_token)
+        .await?
+        .ok_or_else(|| AppError::Unauthorized("Invalid or expired session".to_string()))?;
+    state
+        .auth_service
+        .change_password(
+            &payload.tenant_id,
+            payload.user_id,
+            &body.current_password,
+            &body.new_password,
+            &body.retype_password,
+        )
+        .await?;
+    Ok(Json(serde_json::json!({
+        "message": "Password changed successfully."
     })))
 }
 

@@ -5,6 +5,7 @@ use crate::config::SmtpConfig;
 use crate::repo::{
     kv_store::KvStoreRepo,
     otp::OtpRepo,
+    password_reset_tokens::PasswordResetTokensRepo,
     roles::RolesRepo,
     tenants::TenantsRepo,
     users::UsersRepo,
@@ -44,6 +45,7 @@ impl AppState {
         };
         let users_repo = UsersRepo::new(pool.clone());
         let roles_repo = RolesRepo::new(pool.clone());
+        let password_reset_tokens_repo = PasswordResetTokensRepo::new(pool.clone());
         let sessions_repo = PostgresSessionStore::new(pool.clone());
         let session_store: Arc<dyn SessionStore> = if let Some(ref url) = redis_url {
             Arc::new(crate::repo::sessions_redis::RedisSessionStore::new(url)?)
@@ -53,6 +55,7 @@ impl AppState {
         let auth_service = AuthService::new(
             users_repo,
             roles_repo,
+            password_reset_tokens_repo,
             tenant_config,
             session_store.clone(),
             sessions_repo.clone(),

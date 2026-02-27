@@ -3,7 +3,7 @@
 use crate::domain::session::SessionPayload;
 use crate::domain::user::User;
 use crate::error::AppError;
-use crate::repo::{roles::RolesRepo, users::UsersRepo};
+use crate::repo::{password_reset_tokens::PasswordResetTokensRepo, roles::RolesRepo, users::UsersRepo};
 use crate::services::session::SessionStore;
 use crate::services::tenant_config::{PasswordPolicy, TenantConfigLoader};
 use argon2::password_hash::SaltString;
@@ -21,6 +21,7 @@ const LOGIN_METHOD_USERNAME_PASSWORD: i32 = 4;
 const DEFAULT_LOCK_AFTER_ATTEMPTS: i32 = 5;
 const DEFAULT_LOCK_DURATION_MINS: i64 = 15;
 const DEFAULT_SESSION_TTL_SECS: u64 = 3600; // 1 hour
+const PASSWORD_RESET_TOKEN_TTL_MINS: i64 = 60;
 
 /// Generates a 256-bit (32-byte) random session token, base64url-encoded (no padding).
 fn generate_session_token() -> String {
@@ -33,6 +34,7 @@ fn generate_session_token() -> String {
 pub struct AuthService {
     users_repo: UsersRepo,
     roles_repo: RolesRepo,
+    password_reset_tokens_repo: PasswordResetTokensRepo,
     tenant_config: TenantConfigLoader,
     session_store: Arc<dyn SessionStore>,
     sessions_repo: crate::repo::sessions::PostgresSessionStore,
@@ -42,6 +44,7 @@ impl AuthService {
     pub fn new(
         users_repo: UsersRepo,
         roles_repo: RolesRepo,
+        password_reset_tokens_repo: PasswordResetTokensRepo,
         tenant_config: TenantConfigLoader,
         session_store: Arc<dyn SessionStore>,
         sessions_repo: crate::repo::sessions::PostgresSessionStore,
@@ -49,6 +52,7 @@ impl AuthService {
         Self {
             users_repo,
             roles_repo,
+            password_reset_tokens_repo,
             tenant_config,
             session_store,
             sessions_repo,
@@ -365,6 +369,126 @@ impl AuthService {
             )
             .await?;
         Ok(user)
+    }
+
+    /// Forgot password: create a reset token. Returns Some((email, token)) when user exists so caller can send email; None to avoid email enumeration.
+    pub async fn forgot_password(
+        &self,
+        tenant_id: &str,
+        email: &str,
+    ) -> Result<Option<(String, String)>, AppError> {
+        let email = email.trim().to_lowercase();
+        if email.is_empty() {
+            return Err(AppError::BadRequest("Email is required".to_string()));
+        }
+        let user = match self.users_repo.get_by_email_insensitive(tenant_id, &email).await? {
+            Some(u) => u,
+            None => return Ok(None),
+        };
+        let to_email = match &user.email {
+            Some(e) => e.clone(),
+            None => return Ok(None),
+        };
+        self.password_reset_tokens_repo
+            .delete_for_user(tenant_id, user.id)
+            .await?;
+        let token = generate_session_token();
+        let expires_at = Utc::now() + Duration::minutes(PASSWORD_RESET_TOKEN_TTL_MINS);
+        self.password_reset_tokens_repo
+            .create(tenant_id, user.id, &token, expires_at)
+            .await?;
+        Ok(Some((to_email, token)))
+    }
+
+    /// Reset password using a token from forgot-password email. Validates token, applies policy, updates password, invalidates token.
+    pub async fn reset_password(
+        &self,
+        tenant_id: &str,
+        token: &str,
+        new_password: &str,
+        retype_password: &str,
+    ) -> Result<(), AppError> {
+        let token = token.trim();
+        if token.is_empty() {
+            return Err(AppError::BadRequest("Token is required".to_string()));
+        }
+        if new_password != retype_password {
+            return Err(AppError::BadRequest("Password and retype password do not match".to_string()));
+        }
+        let policy = self.tenant_config.get_password_policy(tenant_id).await?;
+        Self::validate_password_policy(new_password, policy.as_ref())?;
+        let (stored_tenant_id, user_id) = self
+            .password_reset_tokens_repo
+            .get_valid(token)
+            .await?
+            .ok_or_else(|| AppError::BadRequest("Invalid or expired reset token".to_string()))?;
+        if stored_tenant_id != tenant_id {
+            return Err(AppError::BadRequest("Invalid or expired reset token".to_string()));
+        }
+        let password_hash = self.hash_password(new_password)?;
+        self.users_repo
+            .update_password(tenant_id, user_id, &password_hash)
+            .await?;
+        self.password_reset_tokens_repo.delete_by_token(token).await?;
+        Ok(())
+    }
+
+    /// Change password for the current user (requires current password).
+    pub async fn change_password(
+        &self,
+        tenant_id: &str,
+        user_id: Uuid,
+        current_password: &str,
+        new_password: &str,
+        retype_password: &str,
+    ) -> Result<(), AppError> {
+        if new_password != retype_password {
+            return Err(AppError::BadRequest("Password and retype password do not match".to_string()));
+        }
+        let policy = self.tenant_config.get_password_policy(tenant_id).await?;
+        Self::validate_password_policy(new_password, policy.as_ref())?;
+        let user = self
+            .users_repo
+            .get_by_id(tenant_id, user_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+        let password_hash = user
+            .password_hash
+            .as_ref()
+            .ok_or_else(|| AppError::BadRequest("Account has no password set".to_string()))?;
+        if !self.verify_password(password_hash, current_password)? {
+            return Err(AppError::Unauthorized("Current password is incorrect".to_string()));
+        }
+        let new_hash = self.hash_password(new_password)?;
+        self.users_repo
+            .update_password(tenant_id, user_id, &new_hash)
+            .await?;
+        Ok(())
+    }
+
+    /// Admin reset: set a new password for a user (no current password required). Caller is responsible for admin auth.
+    pub async fn admin_reset_password(
+        &self,
+        tenant_id: &str,
+        user_id: Uuid,
+        new_password: &str,
+        retype_password: &str,
+    ) -> Result<(), AppError> {
+        if new_password != retype_password {
+            return Err(AppError::BadRequest("Password and retype password do not match".to_string()));
+        }
+        let policy = self.tenant_config.get_password_policy(tenant_id).await?;
+        Self::validate_password_policy(new_password, policy.as_ref())?;
+        let _user = self
+            .users_repo
+            .get_by_id(tenant_id, user_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+        let password_hash = self.hash_password(new_password)?;
+        self.users_repo
+            .update_password(tenant_id, user_id, &password_hash)
+            .await?;
+        Ok(())
     }
 }
 

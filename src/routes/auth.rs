@@ -22,6 +22,13 @@ pub fn signup_router() -> Router<Arc<AppState>> {
     Router::new().route("/signup", post(signup))
 }
 
+/// Forgot password and reset password (no auth required).
+pub fn password_router() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/forgot-password", post(forgot_password))
+        .route("/reset-password", post(reset_password))
+}
+
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/email-password", post(login_email_password))
@@ -78,6 +85,20 @@ struct OtpVerifyBody {
     identifier: String,
     code: String,
     channel: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ForgotPasswordBody {
+    email: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResetPasswordBody {
+    token: String,
+    new_password: String,
+    retype_password: String,
 }
 
 async fn signup(
@@ -255,6 +276,52 @@ async fn otp_verify(
             "mfaToken": mfa_token
         }))),
     }
+}
+
+async fn forgot_password(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Json(body): Json<ForgotPasswordBody>,
+) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
+    let result = state
+        .auth_service
+        .forgot_password(&tenant_id.0, &body.email)
+        .await?;
+    if let Some((to_email, token)) = result {
+        if let Some(ref smtp) = state.smtp_config {
+            if let Err(e) = email::send_password_reset_email(smtp, &to_email, &token).await {
+                tracing::warn!("Failed to send password reset email to {}: {}", to_email, e);
+            }
+        }
+    }
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "message": "If this email is registered, you will receive a password reset link shortly."
+        })),
+    ))
+}
+
+async fn reset_password(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Json(body): Json<ResetPasswordBody>,
+) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
+    state
+        .auth_service
+        .reset_password(
+            &tenant_id.0,
+            &body.token,
+            &body.new_password,
+            &body.retype_password,
+        )
+        .await?;
+    Ok((
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "message": "Password has been reset successfully."
+        })),
+    ))
 }
 
 async fn oauth_redirect() -> &'static str {

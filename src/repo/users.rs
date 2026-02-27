@@ -186,4 +186,22 @@ impl UsersRepo {
         .await?;
         Ok(())
     }
+
+    /// Update user's password hash (for change-password and reset-password flows).
+    pub async fn update_password(
+        &self,
+        tenant_id: &str,
+        user_id: Uuid,
+        password_hash: &str,
+    ) -> Result<(), AppError> {
+        sqlx::query(
+            "UPDATE users SET password_hash = $1, updated_at = now() WHERE tenant_id = $2 AND id = $3",
+        )
+        .bind(password_hash)
+        .bind(tenant_id)
+        .bind(user_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
 }

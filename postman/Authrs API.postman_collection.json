@@ -5,19 +5,66 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:3000" },
-    { "key": "tenantId", "value": "test" },
-    { "key": "sessionToken", "value": "" },
-    { "key": "userId", "value": "" },
-    { "key": "roleId", "value": "" },
-    { "key": "firstName", "value": "Kaushik" },
-    { "key": "lastName", "value": "Sundar" },
-    { "key": "email", "value": "kaushik-xs@gmail.com" },
-    { "key": "password", "value": "secret" },
-    { "key": "retypePassword", "value": "secret" },
-    { "key": "otpIdentifier", "value": "kaushik-xs@gmail.com" },
-    { "key": "otpCode", "value": "123456" },
-    { "key": "otpChannel", "value": "email" }
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "tenantId",
+      "value": "test"
+    },
+    {
+      "key": "sessionToken",
+      "value": ""
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "roleId",
+      "value": ""
+    },
+    {
+      "key": "firstName",
+      "value": "Kaushik"
+    },
+    {
+      "key": "lastName",
+      "value": "Sundar"
+    },
+    {
+      "key": "email",
+      "value": "kaushik-xs@gmail.com"
+    },
+    {
+      "key": "password",
+      "value": "password123"
+    },
+    {
+      "key": "retypePassword",
+      "value": "password123"
+    },
+    {
+      "key": "newPassword",
+      "value": "newpassword123"
+    },
+    {
+      "key": "resetToken",
+      "value": ""
+    },
+    {
+      "key": "otpIdentifier",
+      "value": "kaushik-xs@gmail.com"
+    },
+    {
+      "key": "otpCode",
+      "value": "123456"
+    },
+    {
+      "key": "otpChannel",
+      "value": "email"
+    }
   ],
   "item": [
     {
@@ -28,8 +75,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -59,8 +112,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -74,8 +133,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -105,14 +170,62 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"identifier\": \"{{otpIdentifier}}\",\n  \"code\": \"{{otpCode}}\",\n  \"channel\": \"{{otpChannel}}\"\n}"
             },
             "url": "{{baseUrl}}/login/otp/verify"
+          }
+        },
+        {
+          "name": "Forgot password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\"\n}"
+            },
+            "url": "{{baseUrl}}/forgot-password"
+          }
+        },
+        {
+          "name": "Reset password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"newPassword\": \"{{newPassword}}\",\n  \"retypePassword\": \"{{newPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/reset-password"
           }
         }
       ]
@@ -125,7 +238,10 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{sessionToken}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
             ],
             "url": "{{baseUrl}}/session/validate"
           }
@@ -135,9 +251,33 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{sessionToken}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
             ],
             "url": "{{baseUrl}}/session/me"
+          }
+        },
+        {
+          "name": "Change password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{password}}\",\n  \"newPassword\": \"{{newPassword}}\",\n  \"retypePassword\": \"{{newPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/session/change-password"
           }
         },
         {
@@ -145,7 +285,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{sessionToken}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
             ],
             "url": "{{baseUrl}}/session/logout"
           }
@@ -160,7 +303,10 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              }
             ],
             "url": "{{baseUrl}}/admin/users/{{userId}}/roles"
           }
@@ -170,8 +316,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -185,9 +337,33 @@
           "request": {
             "method": "DELETE",
             "header": [
-              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              }
             ],
             "url": "{{baseUrl}}/admin/users/{{userId}}/roles/{{roleId}}"
+          }
+        },
+        {
+          "name": "Reset user password (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newPassword\": \"{{newPassword}}\",\n  \"retypePassword\": \"{{newPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/admin/users/{{userId}}/reset-password"
           }
         },
         {
@@ -195,7 +371,10 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              }
             ],
             "url": "{{baseUrl}}/admin/roles"
           }
