@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Build and push authrs image to a public Docker registry (e.g. Docker Hub).
+# Builds multi-platform image (linux/amd64, linux/arm64) so it runs on both
+# x86_64 servers (e.g. Ubuntu on AWS) and ARM (e.g. Apple Silicon).
 #
 # Usage:
 #   ./scripts/docker-build-push.sh [IMAGE[:TAG]]
@@ -11,6 +13,7 @@
 #
 # Prerequisites:
 #   - docker login   (to Docker Hub or your registry)
+#   - docker buildx  (create builder once: docker buildx create --use)
 
 set -e
 
@@ -30,10 +33,14 @@ if [[ "$IMAGE" != *:* ]]; then
   IMAGE="${IMAGE}:latest"
 fi
 
-echo "Building $IMAGE ..."
-docker build -t "$IMAGE" "$REPO_ROOT"
+# Multi-platform so image works on linux/amd64 (e.g. Ubuntu) and linux/arm64 (e.g. Mac M1/M2)
+PLATFORMS="${DOCKER_PLATFORMS:-linux/amd64,linux/arm64}"
 
-echo "Pushing $IMAGE ..."
-docker push "$IMAGE"
+echo "Building $IMAGE for $PLATFORMS ..."
+docker buildx build \
+  --platform "$PLATFORMS" \
+  --tag "$IMAGE" \
+  --push \
+  "$REPO_ROOT"
 
-echo "Done. Image pushed: $IMAGE"
+echo "Done. Image pushed: $IMAGE (platforms: $PLATFORMS)"

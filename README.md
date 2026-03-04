@@ -55,7 +55,13 @@ On Linux, uncomment the `extra_hosts` block for the app in `docker-compose.yml` 
    docker login
    ```
 
-2. Build and push using your Docker Hub username and optional tag:
+2. (One-time) Create a buildx builder so multi-platform builds work (needed for both amd64 servers and ARM Macs):
+
+   ```bash
+   docker buildx create --use
+   ```
+
+3. Build and push using your Docker Hub username and optional tag. The script builds for **linux/amd64** and **linux/arm64** so the same image runs on x86_64 (e.g. Ubuntu) and Apple Silicon:
 
    ```bash
    ./scripts/docker-build-push.sh YOUR_DOCKERHUB_USERNAME/authrs
@@ -69,7 +75,7 @@ On Linux, uncomment the `extra_hosts` block for the app in `docker-compose.yml` 
    DOCKER_IMAGE=YOUR_DOCKERHUB_USERNAME/authrs ./scripts/docker-build-push.sh
    ```
 
-   The script builds the image from the repo root and pushes it to the registry. Use the same image name (e.g. `username/authrs`) to keep your public image updated.
+   Use the same image name (e.g. `username/authrs`) to keep your public image updated.
 
 ## API overview
 
