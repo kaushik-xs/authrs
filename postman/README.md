@@ -25,5 +25,11 @@ Set these in the collection (or environment). After **Login (email + password)**
 | `otpIdentifier` | OTP verify (email or phone)        | `jane@example.com`  |
 | `otpCode`      | OTP verify code                      | `123456`            |
 | `otpChannel`   | OTP verify channel                   | `email`             |
+| `username`     | Username-password login               | *(set if using)*    |
+| `provider`     | OAuth provider (e.g. google, microsoft) | `google`          |
+| `groupKey`     | KV store group (admin KV APIs)        | `config`            |
+| `kvKey`        | KV store key (admin KV APIs)          | `setting`           |
+| `newPassword`  | New password (reset / change / admin reset) | *(set)*      |
+| `resetToken`   | Token from forgot-password email      | *(paste from email)*|
 
 **Workflow:** Set `baseUrl` and `tenantId`, then run **Signup** or **Login (email + password)**. `sessionToken` is saved automatically. For Admin routes, run **List roles** to get role UUIDs and set `userId` / `roleId` as needed.

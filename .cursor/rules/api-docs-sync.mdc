@@ -1,0 +1,22 @@
+---
+description: Keep OpenAPI spec and Postman collection in sync when APIs change
+globs: src/routes/**/*.rs, src/api/**/*.rs, postman/**/*.json, openapi/**/*
+alwaysApply: false
+---
+
+# API docs sync
+
+When you **add, remove, or change** HTTP routes, request/response types, path parameters, or query parameters:
+
+1. **OpenAPI spec**
+   - Use `utoipa` attributes on handlers and types (e.g. `#[derive(OpenApi)]`, `path` on handlers, `IntoParams` / schema derives on DTOs).
+   - Expose the spec (e.g. mount `utoipa_swagger_ui::SwaggerUi` and serve the OpenAPI JSON at `/openapi.json`) or write it to a file under `openapi/` (e.g. `openapi/openapi.json`) if the project uses a static spec.
+   - After any route or DTO change, regenerate or update the spec so it stays accurate.
+
+2. **Postman collection**
+   - Update `postman/Authrs API.postman_collection.json` to match the API:
+     - **New route**: add a request in the right folder with method, path (use `{{baseUrl}}`, `{{tenantId}}`, `{{sessionToken}}` where needed), headers (e.g. `X-Tenant-ID`, `Authorization: Bearer {{sessionToken}}`), and body if applicable.
+     - **Changed path/body/params**: update the existing request in the collection.
+     - **Removed route**: remove the corresponding request from the collection.
+
+Keep variable names consistent with the collection (e.g. `baseUrl`, `tenantId`, `sessionToken`) and document new variables in `postman/README.md` if you add any.

@@ -5,6 +5,7 @@ pub mod email;
 pub mod error;
 pub mod api;
 pub mod domain;
+pub mod openapi;
 pub mod routes;
 pub mod services;
 pub mod repo;

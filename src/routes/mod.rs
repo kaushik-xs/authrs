@@ -10,9 +10,11 @@ pub mod mfa;
 pub mod session;
 pub mod admin;
 pub mod health;
+pub mod spec;
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
+        .merge(spec::router())
         .merge(health::router())
         .merge(auth::signup_router())
         .merge(auth::password_router())
