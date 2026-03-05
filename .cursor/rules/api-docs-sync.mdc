@@ -1,6 +1,6 @@
 ---
 description: Keep OpenAPI spec and Postman collection in sync when APIs change
-globs: src/routes/**/*.rs, src/api/**/*.rs, postman/**/*.json, openapi/**/*
+globs: src/routes/**/*.rs, src/api/**/*.rs, src/openapi.rs, postman/**/*.json, openapi/**/*
 alwaysApply: false
 ---
 
@@ -8,10 +8,12 @@ alwaysApply: false
 
 When you **add, remove, or change** HTTP routes, request/response types, path parameters, or query parameters:
 
-1. **OpenAPI spec**
-   - Use `utoipa` attributes on handlers and types (e.g. `#[derive(OpenApi)]`, `path` on handlers, `IntoParams` / schema derives on DTOs).
-   - Expose the spec (e.g. mount `utoipa_swagger_ui::SwaggerUi` and serve the OpenAPI JSON at `/openapi.json`) or write it to a file under `openapi/` (e.g. `openapi/openapi.json`) if the project uses a static spec.
-   - After any route or DTO change, regenerate or update the spec so it stays accurate.
+1. **OpenAPI spec (`src/openapi.rs`)**
+   - This project keeps the spec in **`src/openapi.rs`** (hand-maintained with `utoipa::openapi::*` builders). When you add, remove, or change routes, update this file so the spec stays executable (Try it out, Postman import).
+   - **New route**: add a `.path(...)` with the correct `HttpMethod`, `OperationBuilder` (summary, description), `.parameter(tenant_id_param())` for tenant-scoped routes, any path params via `path_param("name", "description")`, and for POST/PUT a `.request_body(json_body(ObjectBuilder::new().property(...).required(...)))` with the request body schema.
+   - **Changed path/body/params**: update the existing operation in `openapi::spec()` (path string, parameters, request body schema).
+   - **Removed route**: remove the corresponding `.path(...)` from the `PathsBuilder` chain in `spec()`.
+   - Keep the spec executable: servers, security schemes (bearer, tenant_id), and request body schemas must match the actual API.
 
 2. **Postman collection**
    - Update `postman/Authrs API.postman_collection.json` to match the API:
