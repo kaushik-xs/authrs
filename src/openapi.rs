@@ -12,7 +12,7 @@ use utoipa::openapi::{
     security::{
         ApiKey, ApiKeyValue, HttpAuthScheme, HttpBuilder, SecurityRequirement, SecurityScheme,
     },
-    server::Server,
+    server::{ServerBuilder, ServerVariableBuilder},
     OpenApiBuilder,
 };
 use utoipa::openapi::{request_body::RequestBody, Required};
@@ -574,7 +574,21 @@ pub fn spec() -> utoipa::openapi::OpenApi {
                 .description(Some("Multi-tenant authentication service. Use X-Tenant-ID header for tenant context; use Authorization: Bearer <sessionToken> for authenticated endpoints. Try it out: set server URL, authorize with tenant_id and/or bearer, then execute requests."))
                 .build(),
         )
-        .servers(Some([Server::new("http://localhost:3000")]))
+        .servers(Some([ServerBuilder::new()
+            .url("http://{host}:{port}")
+            .parameter(
+                "host",
+                ServerVariableBuilder::new()
+                    .default_value("localhost")
+                    .description(Some("API host (e.g. localhost or your deployment host)")),
+            )
+            .parameter(
+                "port",
+                ServerVariableBuilder::new()
+                    .default_value("3000")
+                    .description(Some("API port")),
+            )
+            .build()]))
         .paths(paths)
         .components(Some(components))
         .security(Some([SecurityRequirement::new("tenant_id", Vec::<String>::new())
