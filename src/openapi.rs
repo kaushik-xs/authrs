@@ -552,7 +552,10 @@ pub fn spec() -> utoipa::openapi::OpenApi {
                     .scheme(HttpAuthScheme::Bearer)
                     .bearer_format("JWT")
                     .description(Some(
-                        "Session token from login/signup. Use: Authorization: Bearer <sessionToken>",
+                        "Session token sent as Authorization: Bearer {sessionToken}. \
+                         To obtain a token: 1) Set X-Tenant-ID (tenant_id below). \
+                         2) Call POST /login/email-password with body {\"email\", \"password\"}. \
+                         3) Copy sessionToken from the response and paste it here.",
                     ))
                     .build(),
             ),
