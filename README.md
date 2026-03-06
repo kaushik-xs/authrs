@@ -35,6 +35,19 @@ Multi-tenant authentication service (Rust): email/username password, email/mobil
 
    By default it listens on `http://0.0.0.0:3000`.
 
+5. (Optional) Seed a tenant and admin user. **Use the `seed` binary**, not the server:
+
+   ```bash
+   export SEED_TENANT_ID=test
+   export SEED_TENANT_NAME=Test
+   export SEED_ADMIN_EMAIL=admin@example.com
+   export SEED_ADMIN_PASSWORD=your-secret-password
+   export SEED_ROLE_NAME=Owner
+   cargo run --bin seed
+   ```
+
+   `DATABASE_URL` must be set (e.g. from `.env`). If `SEED_TENANT_ID` is not set, the seed binary exits without error (no-op). Do **not** use `cargo run --bin authrs -- seed` — that runs the server and ignores `seed`.
+
 ## Docker Compose
 
 Runs the app and Redis only; the app connects to **PostgreSQL on your host** (no db container):

@@ -1,9 +1,14 @@
 //! Database seed binary: creates base data from SEED_* env vars.
 //!
-//! Usage:
-//!   SEED_TENANT_ID=acme_corp SEED_TENANT_NAME="Acme Corp" cargo run --bin seed
-//!   With admin user:
-//!   SEED_TENANT_ID=acme SEED_TENANT_NAME=Acme SEED_ADMIN_EMAIL=admin@acme.com SEED_ADMIN_PASSWORD=secret cargo run --bin seed
+//! Run with the **seed** binary (not the server):
+//!
+//!   cargo run --bin seed
+//!
+//! Required env: DATABASE_URL (e.g. from .env). To actually seed, set SEED_TENANT_ID.
+//! Optional: SEED_TENANT_NAME, SEED_ROLE_NAME, SEED_ADMIN_EMAIL, SEED_ADMIN_PASSWORD, etc.
+//!
+//! Example:
+//!   SEED_TENANT_ID=test SEED_TENANT_NAME=Test SEED_ADMIN_EMAIL=admin@example.com SEED_ADMIN_PASSWORD=secret cargo run --bin seed
 
 use authrs::{seed_run, SeedInput};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
