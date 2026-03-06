@@ -54,8 +54,22 @@ fn json_body(schema: ObjectBuilder) -> Option<RequestBody> {
 }
 
 /// Builds the OpenAPI 3 spec for the authrs service.
+///
+/// Always includes at least core paths (/spec, /health, /metrics) so the returned spec is never
+/// empty even when there are no entity-specific APIs.
 pub fn spec() -> utoipa::openapi::OpenApi {
     let paths = PathsBuilder::new()
+        // Self-describing: spec endpoint (always present so spec is never empty)
+        .path(
+            "/spec",
+            PathItem::new(
+                HttpMethod::Get,
+                OperationBuilder::new()
+                    .summary(Some("OpenAPI spec"))
+                    .description(Some("Returns this OpenAPI (Swagger) specification as JSON."))
+                    .build(),
+            ),
+        )
         // Health & metrics
         .path(
             "/health",
