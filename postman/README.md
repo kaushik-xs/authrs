@@ -16,7 +16,8 @@ Set these in the collection (or environment). After **Login (email + password)**
 | `tenantId`     | Tenant for `X-Tenant-ID`             | `test`           |
 | `sessionToken` | Bearer token (auto-set after login)  | *(empty)*           |
 | `userId`       | User UUID for Admin user-role APIs   | *(set after listing users)* |
-| `roleId`       | Role UUID for assign/remove role     | *(from List roles)* |
+| `roleId`       | Role UUID for assign/remove role     | *(from List roles or Create role)* |
+| `roleName`     | Role name for Create role            | `Editor`            |
 | `firstName`    | Signup / profile                     | `Jane`              |
 | `lastName`     | Signup / profile                     | `Doe`               |
 | `email`        | Login, signup, OTP request           | `jane@example.com`  |
@@ -32,4 +33,4 @@ Set these in the collection (or environment). After **Login (email + password)**
 | `newPassword`  | New password (reset / change / admin reset) | *(set)*      |
 | `resetToken`   | Token from forgot-password email      | *(paste from email)*|
 
-**Workflow:** Set `baseUrl` and `tenantId`, then run **Signup** or **Login (email + password)**. `sessionToken` is saved automatically. For Admin routes, run **List roles** to get role UUIDs and set `userId` / `roleId` as needed.
+**Workflow:** Set `baseUrl` and `tenantId`, then run **Signup** or **Login (email + password)**. `sessionToken` is saved automatically. For Admin: **List users** and **List roles** (or **Create user** / **Create role**) auto-set `userId` and `roleId` from responses so you can run **Assign role to user** or **List user roles** without copying IDs by hand.

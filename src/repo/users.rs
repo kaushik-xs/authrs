@@ -104,6 +104,17 @@ impl UsersRepo {
         Ok(user)
     }
 
+    /// List all users for a tenant (ordered by created_at descending).
+    pub async fn list(&self, tenant_id: &str) -> Result<Vec<User>, AppError> {
+        let rows = sqlx::query_as::<_, UserRow>(
+            "SELECT id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, failed_attempts, locked_until, created_at, updated_at FROM users WHERE tenant_id = $1 ORDER BY created_at DESC",
+        )
+        .bind(tenant_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(Self::row_to_user).collect())
+    }
+
     pub async fn get_by_id(&self, tenant_id: &str, user_id: Uuid) -> Result<Option<User>, AppError> {
         let row = sqlx::query_as::<_, UserRow>(
             "SELECT id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, failed_attempts, locked_until, created_at, updated_at FROM users WHERE tenant_id = $1 AND id = $2",

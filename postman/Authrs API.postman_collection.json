@@ -80,6 +80,10 @@
     {
       "key": "kvKey",
       "value": "setting"
+    },
+    {
+      "key": "roleName",
+      "value": "Editor"
     }
   ],
   "item": [
@@ -534,6 +538,22 @@
       "item": [
         {
           "name": "Create user",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.id) {",
+                  "    pm.collectionVariables.set('userId', json.id);",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -552,13 +572,30 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"firstName\": \"{{firstName}}\",\n  \"lastName\": \"{{lastName}}\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+              "raw": "{\n  \"firstName\": \"{{firstName}}\",\n  \"lastName\": \"{{lastName}}\",\n  \"email\": \"{{email}}\",\n  \"username\": \"\",\n  \"mobile\": \"\",\n  \"countryCode\": \"\",\n  \"password\": \"{{password}}\",\n  \"retypePassword\": \"{{retypePassword}}\"\n}"
             },
-            "url": "{{baseUrl}}/admin/users"
+            "url": "{{baseUrl}}/admin/users",
+            "description": "Create a user. Requires at least one of: email, (mobile + countryCode), or username. Optional: firstName, lastName, password + retypePassword."
           }
         },
         {
           "name": "List users",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.users && json.users.length > 0 && json.users[0].id) {",
+                  "    pm.collectionVariables.set('userId', json.users[0].id);",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [
@@ -571,7 +608,8 @@
                 "value": "Bearer {{sessionToken}}"
               }
             ],
-            "url": "{{baseUrl}}/admin/users"
+            "url": "{{baseUrl}}/admin/users",
+            "description": "List all users for the tenant. Sets userId from first user (for Assign role / List user roles)."
           }
         },
         {
@@ -660,6 +698,22 @@
         },
         {
           "name": "Create role",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.id) {",
+                  "    pm.collectionVariables.set('roleId', json.id);",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -678,13 +732,30 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"\",\n  \"description\": \"\"\n}"
+              "raw": "{\n  \"name\": \"{{roleName}}\"\n}"
             },
-            "url": "{{baseUrl}}/admin/roles"
+            "url": "{{baseUrl}}/admin/roles",
+            "description": "Create a role for the tenant. Name must be unique per tenant. Sets roleId from response (for Assign role to user)."
           }
         },
         {
           "name": "List roles",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.roles && json.roles.length > 0 && json.roles[0].id) {",
+                  "    pm.collectionVariables.set('roleId', json.roles[0].id);",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [
@@ -697,7 +768,8 @@
                 "value": "Bearer {{sessionToken}}"
               }
             ],
-            "url": "{{baseUrl}}/admin/roles"
+            "url": "{{baseUrl}}/admin/roles",
+            "description": "List all roles for the tenant. Sets roleId from first role (for Assign role to user)."
           }
         },
         {

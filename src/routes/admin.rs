@@ -44,6 +44,33 @@ struct AssignRoleBody {
     role_id: Uuid,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminCreateUserBody {
+    #[serde(default)]
+    first_name: Option<String>,
+    #[serde(default)]
+    last_name: Option<String>,
+    #[serde(default)]
+    email: Option<String>,
+    #[serde(default)]
+    username: Option<String>,
+    #[serde(default)]
+    mobile: Option<String>,
+    #[serde(default)]
+    country_code: Option<String>,
+    #[serde(default)]
+    password: Option<String>,
+    #[serde(default)]
+    retype_password: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminCreateRoleBody {
+    name: String,
+}
+
 async fn admin_list_user_roles(
     State(state): State<Arc<AppState>>,
     tenant_id: TenantId,
@@ -110,14 +137,62 @@ async fn admin_reset_password(
     ))
 }
 
-async fn admin_create_user() -> &'static str {
-    "admin create user placeholder"
+async fn admin_create_user(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Json(body): Json<AdminCreateUserBody>,
+) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), AppError> {
+    let user = state
+        .auth_service
+        .admin_create_user(
+            &tenant_id.0,
+            body.first_name.as_deref(),
+            body.last_name.as_deref(),
+            body.email.as_deref(),
+            body.username.as_deref(),
+            body.mobile.as_deref(),
+            body.country_code.as_deref(),
+            body.password.as_deref(),
+            body.retype_password.as_deref(),
+        )
+        .await?;
+    let user_json = serde_json::to_value(&user).map_err(|e| AppError::Internal(e.to_string()))?;
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(user_json),
+    ))
 }
-async fn admin_list_users() -> &'static str {
-    "admin list users placeholder"
+
+async fn admin_list_users(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let users = state
+        .auth_service
+        .users_repo()
+        .list(&tenant_id.0)
+        .await?;
+    let users_json: Vec<serde_json::Value> = users
+        .into_iter()
+        .map(|u| serde_json::to_value(&u).unwrap_or_default())
+        .collect();
+    Ok(Json(serde_json::json!({ "users": users_json })))
 }
-async fn admin_create_role() -> &'static str {
-    "admin create role placeholder"
+
+async fn admin_create_role(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Json(body): Json<AdminCreateRoleBody>,
+) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), AppError> {
+    let (id, name) = state
+        .auth_service
+        .roles_repo()
+        .create(&tenant_id.0, &body.name)
+        .await?;
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(serde_json::json!({ "id": id, "name": name })),
+    ))
 }
 async fn admin_list_roles(
     State(state): State<Arc<AppState>>,

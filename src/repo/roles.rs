@@ -98,6 +98,30 @@ impl RolesRepo {
         Ok(r.rows_affected() > 0)
     }
 
+    /// Create a role for a tenant. Returns Conflict if a role with the same name already exists.
+    pub async fn create(&self, tenant_id: &str, name: &str) -> Result<(Uuid, String), AppError> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(AppError::BadRequest("Role name is required".to_string()));
+        }
+        if self.get_role_id_by_name(tenant_id, name).await?.is_some() {
+            return Err(AppError::Conflict(format!(
+                "A role named '{}' already exists for this tenant",
+                name
+            )));
+        }
+        let id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO auth.roles (id, tenant_id, name) VALUES ($1, $2, $3)",
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .bind(name)
+        .execute(&self.pool)
+        .await?;
+        Ok((id, name.to_string()))
+    }
+
     /// List all roles for a tenant (id, name).
     pub async fn list_roles(
         &self,

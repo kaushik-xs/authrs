@@ -1,7 +1,7 @@
 //! Auth service: login (email/username password), lock policy, effective login methods.
 
 use crate::domain::session::SessionPayload;
-use crate::domain::user::User;
+use crate::domain::user::{has_valid_identity, User};
 use crate::error::AppError;
 use crate::repo::{password_reset_tokens::PasswordResetTokensRepo, roles::RolesRepo, users::UsersRepo};
 use crate::services::session::SessionStore;
@@ -489,6 +489,73 @@ impl AuthService {
             .update_password(tenant_id, user_id, &password_hash)
             .await?;
         Ok(())
+    }
+
+    /// Admin create user: at least one of email, (mobile+country_code), or username required.
+    /// If password is provided, retype_password must match and policy is applied.
+    pub async fn admin_create_user(
+        &self,
+        tenant_id: &str,
+        first_name: Option<&str>,
+        last_name: Option<&str>,
+        email: Option<&str>,
+        username: Option<&str>,
+        mobile: Option<&str>,
+        country_code: Option<&str>,
+        password: Option<&str>,
+        retype_password: Option<&str>,
+    ) -> Result<User, AppError> {
+        let email = email.map(|s| s.trim()).filter(|s| !s.is_empty());
+        let username = username.map(|s| s.trim()).filter(|s| !s.is_empty());
+        let mobile = mobile.map(|s| s.trim()).filter(|s| !s.is_empty());
+        let country_code = country_code.map(|s| s.trim()).filter(|s| !s.is_empty());
+        let email_opt = email.map(String::from);
+        let mobile_opt = mobile.map(String::from);
+        let country_code_opt = country_code.map(String::from);
+        let username_opt = username.map(String::from);
+        if !has_valid_identity(&email_opt, &mobile_opt, &country_code_opt, &username_opt) {
+            return Err(AppError::BadRequest(
+                "At least one of email, (mobile and countryCode), or username is required".to_string(),
+            ));
+        }
+        if let Some(email_str) = email {
+            if self.users_repo.get_by_email(tenant_id, email_str).await?.is_some() {
+                return Err(AppError::Conflict("An account with this email already exists".to_string()));
+            }
+        }
+        if let Some(username_str) = username {
+            if self.users_repo.get_by_username(tenant_id, username_str).await?.is_some() {
+                return Err(AppError::Conflict("An account with this username already exists".to_string()));
+            }
+        }
+        let password_hash = match (password, retype_password) {
+            (Some(p), Some(r)) => {
+                if p != r {
+                    return Err(AppError::BadRequest("Password and retype password do not match".to_string()));
+                }
+                let policy = self.tenant_config.get_password_policy(tenant_id).await?;
+                Self::validate_password_policy(p, policy.as_ref())?;
+                Some(self.hash_password(p)?)
+            }
+            (Some(_), None) | (None, Some(_)) => {
+                return Err(AppError::BadRequest("Both password and retypePassword are required when setting a password".to_string()));
+            }
+            (None, None) => None,
+        };
+        let user = self
+            .users_repo
+            .create(
+                tenant_id,
+                first_name.map(|s| s.trim()).filter(|s| !s.is_empty()),
+                last_name.map(|s| s.trim()).filter(|s| !s.is_empty()),
+                email,
+                username,
+                mobile,
+                country_code,
+                password_hash.as_deref(),
+            )
+            .await?;
+        Ok(user)
     }
 }
 
