@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use crate::api::state::AppState;
 use crate::error::AppError;
+use crate::services::auth::LoginResult;
 
 fn bearer_token(headers: &axum::http::HeaderMap) -> Result<&str, AppError> {
     let auth = headers
@@ -30,11 +31,20 @@ struct ChangePasswordBody {
     retype_password: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ForceChangePasswordBody {
+    change_token: String,
+    new_password: String,
+    retype_password: String,
+}
+
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/validate", get(session_validate))
         .route("/me", get(session_me))
         .route("/change-password", post(change_password))
+        .route("/force-change-password", post(force_change_password))
         .route("/logout", post(logout))
         .route("/logout/all", post(logout_all))
 }
@@ -137,4 +147,27 @@ async fn logout_all(
         .await?;
     let _ = state.sessions_repo.revoke_all_for_user(&tenant_id.0, payload.user_id).await;
     Ok(Json(serde_json::json!({ "ok": true, "sessionsRevoked": count })))
+}
+
+async fn force_change_password(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ForceChangePasswordBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let result = state
+        .auth_service
+        .force_change_password(
+            &body.change_token,
+            &body.new_password,
+            &body.retype_password,
+            None,
+            None,
+        )
+        .await?;
+    match result {
+        LoginResult::Success { session_token, expires_at } => Ok(Json(serde_json::json!({
+            "sessionToken": session_token,
+            "expiresAt": expires_at.to_rfc3339()
+        }))),
+        _ => Err(AppError::Internal("Unexpected login state after password change".to_string())),
+    }
 }

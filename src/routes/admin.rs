@@ -18,6 +18,8 @@ use std::sync::Arc;
 struct AdminResetPasswordBody {
     new_password: String,
     retype_password: String,
+    #[serde(default)]
+    force_password_change: bool,
 }
 
 pub fn router() -> Router<Arc<AppState>> {
@@ -129,6 +131,7 @@ async fn admin_reset_password(
             user_id,
             &body.new_password,
             &body.retype_password,
+            body.force_password_change,
         )
         .await?;
     Ok((

@@ -19,6 +19,7 @@ pub struct User {
     pub password_hash: Option<String>,
     pub status: String,
     pub mfa_enabled: bool,
+    pub force_password_change: bool,
     pub failed_attempts: i32,
     pub locked_until: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,

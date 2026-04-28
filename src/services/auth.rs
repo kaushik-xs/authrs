@@ -3,7 +3,7 @@
 use crate::domain::session::SessionPayload;
 use crate::domain::user::{has_valid_identity, User};
 use crate::error::AppError;
-use crate::repo::{password_reset_tokens::PasswordResetTokensRepo, roles::RolesRepo, users::UsersRepo};
+use crate::repo::{force_change_tokens::ForceChangeTokensRepo, password_reset_tokens::PasswordResetTokensRepo, roles::RolesRepo, users::UsersRepo};
 use crate::services::session::SessionStore;
 use crate::services::tenant_config::{PasswordPolicy, TenantConfigLoader};
 use argon2::password_hash::SaltString;
@@ -22,6 +22,7 @@ const DEFAULT_LOCK_AFTER_ATTEMPTS: i32 = 5;
 const DEFAULT_LOCK_DURATION_MINS: i64 = 15;
 const DEFAULT_SESSION_TTL_SECS: u64 = 3600; // 1 hour
 const PASSWORD_RESET_TOKEN_TTL_MINS: i64 = 60;
+const FORCE_CHANGE_TOKEN_TTL_MINS: i64 = 15;
 
 /// Generates a 256-bit (32-byte) random session token, base64url-encoded (no padding).
 fn generate_session_token() -> String {
@@ -35,6 +36,7 @@ pub struct AuthService {
     users_repo: UsersRepo,
     roles_repo: RolesRepo,
     password_reset_tokens_repo: PasswordResetTokensRepo,
+    force_change_tokens_repo: ForceChangeTokensRepo,
     tenant_config: TenantConfigLoader,
     session_store: Arc<dyn SessionStore>,
     sessions_repo: crate::repo::sessions::PostgresSessionStore,
@@ -45,6 +47,7 @@ impl AuthService {
         users_repo: UsersRepo,
         roles_repo: RolesRepo,
         password_reset_tokens_repo: PasswordResetTokensRepo,
+        force_change_tokens_repo: ForceChangeTokensRepo,
         tenant_config: TenantConfigLoader,
         session_store: Arc<dyn SessionStore>,
         sessions_repo: crate::repo::sessions::PostgresSessionStore,
@@ -53,6 +56,7 @@ impl AuthService {
             users_repo,
             roles_repo,
             password_reset_tokens_repo,
+            force_change_tokens_repo,
             tenant_config,
             session_store,
             sessions_repo,
@@ -223,6 +227,10 @@ impl AuthService {
         }
         self.users_repo.clear_failed_attempts(tenant_id, user.id).await?;
 
+        if user.force_password_change {
+            return self.issue_force_change_token(tenant_id, user.id).await;
+        }
+
         if user.mfa_enabled {
             return Ok(LoginResult::MfaRequired {
                 mfa_token: Uuid::new_v4().to_string(),
@@ -310,6 +318,10 @@ impl AuthService {
         let effective = self.effective_login_methods(tenant_id, user.id, &user).await?;
         if !effective.contains(&LOGIN_METHOD_EMAIL_OTP) {
             return Err(AppError::Forbidden("Email OTP login is not allowed for your account".to_string()));
+        }
+
+        if user.force_password_change {
+            return self.issue_force_change_token(tenant_id, user.id).await;
         }
 
         if user.mfa_enabled {
@@ -473,6 +485,7 @@ impl AuthService {
         user_id: Uuid,
         new_password: &str,
         retype_password: &str,
+        force_password_change: bool,
     ) -> Result<(), AppError> {
         if new_password != retype_password {
             return Err(AppError::BadRequest("Password and retype password do not match".to_string()));
@@ -488,7 +501,58 @@ impl AuthService {
         self.users_repo
             .update_password(tenant_id, user_id, &password_hash)
             .await?;
+        self.users_repo
+            .set_force_password_change(tenant_id, user_id, force_password_change)
+            .await?;
         Ok(())
+    }
+
+    async fn issue_force_change_token(
+        &self,
+        tenant_id: &str,
+        user_id: Uuid,
+    ) -> Result<LoginResult, AppError> {
+        let change_token = generate_session_token();
+        let expires_at = Utc::now() + Duration::minutes(FORCE_CHANGE_TOKEN_TTL_MINS);
+        self.force_change_tokens_repo
+            .create(tenant_id, user_id, &change_token, expires_at)
+            .await?;
+        Ok(LoginResult::PasswordChangeRequired { change_token })
+    }
+
+    /// Complete a forced password change using a change_token issued at login.
+    pub async fn force_change_password(
+        &self,
+        change_token: &str,
+        new_password: &str,
+        retype_password: &str,
+        ip: Option<&str>,
+        user_agent: Option<&str>,
+    ) -> Result<LoginResult, AppError> {
+        let (tenant_id, user_id) = self
+            .force_change_tokens_repo
+            .get_valid(change_token)
+            .await?
+            .ok_or_else(|| AppError::Unauthorized("Invalid or expired change token".to_string()))?;
+
+        if new_password != retype_password {
+            return Err(AppError::BadRequest("Password and retype password do not match".to_string()));
+        }
+        let policy = self.tenant_config.get_password_policy(&tenant_id).await?;
+        Self::validate_password_policy(new_password, policy.as_ref())?;
+
+        let user = self
+            .users_repo
+            .get_by_id(&tenant_id, user_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+
+        let password_hash = self.hash_password(new_password)?;
+        self.users_repo.update_password(&tenant_id, user_id, &password_hash).await?;
+        self.users_repo.set_force_password_change(&tenant_id, user_id, false).await?;
+        self.force_change_tokens_repo.delete_by_token(change_token).await?;
+
+        self.do_create_session(&tenant_id, &user, ip, user_agent).await
     }
 
     /// Admin create user: at least one of email, (mobile+country_code), or username required.
@@ -567,5 +631,8 @@ pub enum LoginResult {
     MfaRequired {
         mfa_token: String,
         user_id: Uuid,
+    },
+    PasswordChangeRequired {
+        change_token: String,
     },
 }

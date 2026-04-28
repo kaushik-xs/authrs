@@ -151,6 +151,10 @@ async fn login_email_password(
             "mfaRequired": true,
             "mfaToken": mfa_token
         }))),
+        LoginResult::PasswordChangeRequired { change_token } => Ok(Json(serde_json::json!({
+            "passwordChangeRequired": true,
+            "changeToken": change_token
+        }))),
     }
 }
 
@@ -171,6 +175,10 @@ async fn login_username_password(
         LoginResult::MfaRequired { mfa_token, .. } => Ok(Json(serde_json::json!({
             "mfaRequired": true,
             "mfaToken": mfa_token
+        }))),
+        LoginResult::PasswordChangeRequired { change_token } => Ok(Json(serde_json::json!({
+            "passwordChangeRequired": true,
+            "changeToken": change_token
         }))),
     }
 }
@@ -274,6 +282,10 @@ async fn otp_verify(
         LoginResult::MfaRequired { mfa_token, .. } => Ok(Json(serde_json::json!({
             "mfaRequired": true,
             "mfaToken": mfa_token
+        }))),
+        LoginResult::PasswordChangeRequired { change_token } => Ok(Json(serde_json::json!({
+            "passwordChangeRequired": true,
+            "changeToken": change_token
         }))),
     }
 }
