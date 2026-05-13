@@ -108,14 +108,35 @@ impl UsersRepo {
     }
 
     /// List all users for a tenant (ordered by created_at descending).
-    pub async fn list(&self, tenant_id: &str) -> Result<Vec<User>, AppError> {
-        let rows = sqlx::query_as::<_, UserRow>(
-            "SELECT id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, force_password_change, failed_attempts, locked_until, created_at, updated_at FROM users WHERE tenant_id = $1 ORDER BY created_at DESC",
+    /// Excludes archived users unless `include_archived` is true.
+    pub async fn list(&self, tenant_id: &str, include_archived: bool) -> Result<Vec<User>, AppError> {
+        let rows = if include_archived {
+            sqlx::query_as::<_, UserRow>(
+                "SELECT id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, force_password_change, failed_attempts, locked_until, created_at, updated_at FROM users WHERE tenant_id = $1 ORDER BY created_at DESC",
+            )
+            .bind(tenant_id)
+            .fetch_all(&self.pool)
+            .await?
+        } else {
+            sqlx::query_as::<_, UserRow>(
+                "SELECT id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, force_password_change, failed_attempts, locked_until, created_at, updated_at FROM users WHERE tenant_id = $1 AND status != 'archived' ORDER BY created_at DESC",
+            )
+            .bind(tenant_id)
+            .fetch_all(&self.pool)
+            .await?
+        };
+        Ok(rows.into_iter().map(Self::row_to_user).collect())
+    }
+
+    pub async fn archive(&self, tenant_id: &str, user_id: Uuid) -> Result<bool, AppError> {
+        let result = sqlx::query(
+            "UPDATE users SET status = 'archived', updated_at = now() WHERE tenant_id = $1 AND id = $2 AND status != 'archived'",
         )
         .bind(tenant_id)
-        .fetch_all(&self.pool)
+        .bind(user_id)
+        .execute(&self.pool)
         .await?;
-        Ok(rows.into_iter().map(Self::row_to_user).collect())
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn get_by_id(&self, tenant_id: &str, user_id: Uuid) -> Result<Option<User>, AppError> {

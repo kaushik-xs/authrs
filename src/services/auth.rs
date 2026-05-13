@@ -621,6 +621,19 @@ impl AuthService {
             .await?;
         Ok(user)
     }
+
+    pub async fn admin_archive_user(&self, tenant_id: &str, user_id: Uuid) -> Result<(), AppError> {
+        let _user = self
+            .users_repo
+            .get_by_id(tenant_id, user_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+        let archived = self.users_repo.archive(tenant_id, user_id).await?;
+        if !archived {
+            return Err(AppError::BadRequest("User is already archived".to_string()));
+        }
+        Ok(())
+    }
 }
 
 pub enum LoginResult {

@@ -608,8 +608,38 @@
                 "value": "Bearer {{sessionToken}}"
               }
             ],
-            "url": "{{baseUrl}}/admin/users",
-            "description": "List all users for the tenant. Sets userId from first user (for Assign role / List user roles)."
+            "url": {
+              "raw": "{{baseUrl}}/admin/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "users"],
+              "query": [
+                {
+                  "key": "includeArchived",
+                  "value": "true",
+                  "disabled": true,
+                  "description": "Set to true to include archived users in the response"
+                }
+              ]
+            },
+            "description": "List all users for the tenant. Sets userId from first user (for Assign role / List user roles). Add ?includeArchived=true to include archived users."
+          }
+        },
+        {
+          "name": "Archive user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/users/{{userId}}/archive",
+            "description": "Soft-delete a user by setting their status to 'archived'. Archived users cannot log in and are excluded from List users by default. Returns 400 if the user is already archived."
           }
         },
         {

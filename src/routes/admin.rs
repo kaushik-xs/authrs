@@ -1,7 +1,7 @@
 //! Admin routes: users, roles, permissions, kv_store.
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     routing::{delete, get, post, put},
     Json, Router,
 };
@@ -29,6 +29,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/users/:user_id/roles", get(admin_list_user_roles))
         .route("/users/:user_id/roles", post(admin_assign_role_to_user))
         .route("/users/:user_id/roles/:role_id", delete(admin_remove_role_from_user))
+        .route("/users/:user_id/archive", post(admin_archive_user))
         .route("/users/:user_id/reset-password", post(admin_reset_password))
         .route("/roles", post(admin_create_role))
         .route("/roles", get(admin_list_roles))
@@ -166,20 +167,40 @@ async fn admin_create_user(
     ))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListUsersQuery {
+    #[serde(default)]
+    include_archived: bool,
+}
+
 async fn admin_list_users(
     State(state): State<Arc<AppState>>,
     tenant_id: TenantId,
+    Query(params): Query<ListUsersQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let users = state
         .auth_service
         .users_repo()
-        .list(&tenant_id.0)
+        .list(&tenant_id.0, params.include_archived)
         .await?;
     let users_json: Vec<serde_json::Value> = users
         .into_iter()
         .map(|u| serde_json::to_value(&u).unwrap_or_default())
         .collect();
     Ok(Json(serde_json::json!({ "users": users_json })))
+}
+
+async fn admin_archive_user(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Path(user_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    state
+        .auth_service
+        .admin_archive_user(&tenant_id.0, user_id)
+        .await?;
+    Ok(Json(serde_json::json!({ "message": "User archived successfully." })))
 }
 
 async fn admin_create_role(
