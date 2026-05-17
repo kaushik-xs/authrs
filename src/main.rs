@@ -16,6 +16,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    authrs::db::ensure_database_exists(&config.database_url)
+        .await
+        .expect("Failed to ensure database exists");
     let pool = sqlx::postgres::PgPoolOptions::new()
         .connect(&config.database_url)
         .await

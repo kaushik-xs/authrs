@@ -1,6 +1,7 @@
 //! Authrs - Multi-tenant authentication service.
 
 pub mod config;
+pub mod db;
 pub mod email;
 pub mod error;
 pub mod api;

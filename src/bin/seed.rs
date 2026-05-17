@@ -25,6 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .init();
 
     let database_url = std::env::var("DATABASE_URL").map_err(|_| "DATABASE_URL is required")?;
+    authrs::db::ensure_database_exists(&database_url).await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .connect(&database_url)
         .await?;
