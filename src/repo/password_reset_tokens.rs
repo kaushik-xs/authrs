@@ -23,7 +23,7 @@ impl PasswordResetTokensRepo {
         expires_at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), AppError> {
         sqlx::query(
-            r#"INSERT INTO auth.password_reset_tokens (tenant_id, user_id, token, expires_at)
+            r#"INSERT INTO password_reset_tokens (tenant_id, user_id, token, expires_at)
                VALUES ($1, $2, $3, $4)"#,
         )
         .bind(tenant_id)
@@ -42,7 +42,7 @@ impl PasswordResetTokensRepo {
     ) -> Result<Option<(String, Uuid)>, AppError> {
         let now = chrono::Utc::now();
         let row = sqlx::query_as::<_, (String, Uuid)>(
-            "SELECT tenant_id, user_id FROM auth.password_reset_tokens WHERE token = $1 AND expires_at > $2",
+            "SELECT tenant_id, user_id FROM password_reset_tokens WHERE token = $1 AND expires_at > $2",
         )
         .bind(token)
         .bind(now)
@@ -53,7 +53,7 @@ impl PasswordResetTokensRepo {
 
     /// Delete a token (after successful reset).
     pub async fn delete_by_token(&self, token: &str) -> Result<(), AppError> {
-        sqlx::query("DELETE FROM auth.password_reset_tokens WHERE token = $1")
+        sqlx::query("DELETE FROM password_reset_tokens WHERE token = $1")
             .bind(token)
             .execute(&self.pool)
             .await?;
@@ -66,7 +66,7 @@ impl PasswordResetTokensRepo {
         tenant_id: &str,
         user_id: Uuid,
     ) -> Result<(), AppError> {
-        sqlx::query("DELETE FROM auth.password_reset_tokens WHERE tenant_id = $1 AND user_id = $2")
+        sqlx::query("DELETE FROM password_reset_tokens WHERE tenant_id = $1 AND user_id = $2")
             .bind(tenant_id)
             .bind(user_id)
             .execute(&self.pool)

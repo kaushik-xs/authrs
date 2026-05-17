@@ -1,1 +1,1 @@
-DROP SCHEMA IF EXISTS auth CASCADE;
+-- nothing to drop

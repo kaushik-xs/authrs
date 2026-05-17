@@ -1,7 +1,7 @@
 -- OTP codes: channel = email | sms | whatsapp
-CREATE TABLE auth.otp_codes (
+CREATE TABLE otp_codes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id VARCHAR(255) NOT NULL REFERENCES auth.tenants(id) ON DELETE CASCADE,
+    tenant_id VARCHAR(255) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     identifier VARCHAR(255) NOT NULL,
     channel VARCHAR(20) NOT NULL CHECK (channel IN ('email', 'sms', 'whatsapp')),
     code VARCHAR(10) NOT NULL,
@@ -11,14 +11,14 @@ CREATE TABLE auth.otp_codes (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_otp_codes_tenant_identifier ON auth.otp_codes(tenant_id, identifier, channel, purpose);
-CREATE INDEX idx_otp_codes_expires ON auth.otp_codes(expires_at);
+CREATE INDEX idx_otp_codes_tenant_identifier ON otp_codes(tenant_id, identifier, channel, purpose);
+CREATE INDEX idx_otp_codes_expires ON otp_codes(expires_at);
 
 -- Sessions (audit table); active session in Redis or validated from here when Redis disabled
-CREATE TABLE auth.sessions (
+CREATE TABLE sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id VARCHAR(255) NOT NULL REFERENCES auth.tenants(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    tenant_id VARCHAR(255) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     session_token VARCHAR(255) NOT NULL UNIQUE,
     ip_address TEXT,
     user_agent TEXT,
@@ -27,6 +27,6 @@ CREATE TABLE auth.sessions (
     revoked BOOLEAN NOT NULL DEFAULT false
 );
 
-CREATE INDEX idx_sessions_session_token ON auth.sessions(session_token);
-CREATE INDEX idx_sessions_tenant_user ON auth.sessions(tenant_id, user_id);
-CREATE INDEX idx_sessions_expires ON auth.sessions(expires_at) WHERE revoked = false;
+CREATE INDEX idx_sessions_session_token ON sessions(session_token);
+CREATE INDEX idx_sessions_tenant_user ON sessions(tenant_id, user_id);
+CREATE INDEX idx_sessions_expires ON sessions(expires_at) WHERE revoked = false;

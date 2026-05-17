@@ -1,7 +1,7 @@
 -- Users: identity rule = email OR (mobile AND country_code) OR username
-CREATE TABLE auth.users (
+CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id VARCHAR(255) NOT NULL REFERENCES auth.tenants(id) ON DELETE CASCADE,
+    tenant_id VARCHAR(255) NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     first_name VARCHAR(255),
     last_name VARCHAR(255),
     email VARCHAR(255),
@@ -25,7 +25,7 @@ CREATE TABLE auth.users (
     CONSTRAINT users_mobile_unique UNIQUE (tenant_id, mobile, country_code)
 );
 
-CREATE INDEX idx_users_tenant ON auth.users(tenant_id);
-CREATE INDEX idx_users_tenant_email ON auth.users(tenant_id, email) WHERE email IS NOT NULL;
-CREATE INDEX idx_users_tenant_username ON auth.users(tenant_id, username) WHERE username IS NOT NULL;
-CREATE INDEX idx_users_tenant_mobile ON auth.users(tenant_id, mobile, country_code) WHERE mobile IS NOT NULL;
+CREATE INDEX idx_users_tenant ON users(tenant_id);
+CREATE INDEX idx_users_tenant_email ON users(tenant_id, email) WHERE email IS NOT NULL;
+CREATE INDEX idx_users_tenant_username ON users(tenant_id, username) WHERE username IS NOT NULL;
+CREATE INDEX idx_users_tenant_mobile ON users(tenant_id, mobile, country_code) WHERE mobile IS NOT NULL;

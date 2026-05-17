@@ -229,7 +229,7 @@ impl UsersRepo {
         value: bool,
     ) -> Result<(), AppError> {
         sqlx::query(
-            "UPDATE auth.users SET force_password_change = $1, updated_at = now() WHERE tenant_id = $2 AND id = $3",
+            "UPDATE users SET force_password_change = $1, updated_at = now() WHERE tenant_id = $2 AND id = $3",
         )
         .bind(value)
         .bind(tenant_id)

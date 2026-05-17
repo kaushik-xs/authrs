@@ -1,1 +1,1 @@
-CREATE SCHEMA IF NOT EXISTS auth;
+-- tables are created in the public schema (default)

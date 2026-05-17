@@ -70,7 +70,7 @@ pub async fn run(pool: &PgPool, input: &SeedInput) -> Result<(), String> {
     // 1. Tenant (idempotent)
     let inserted = sqlx::query(
         r#"
-        INSERT INTO auth.tenants (id, name, status)
+        INSERT INTO tenants (id, name, status)
         VALUES ($1, $2, 'active')
         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
         "#,
@@ -94,10 +94,10 @@ pub async fn run(pool: &PgPool, input: &SeedInput) -> Result<(), String> {
     // 2. Seeded role (SEED_ROLE_NAME)
     let _ = sqlx::query(
         r#"
-        INSERT INTO auth.roles (tenant_id, name)
+        INSERT INTO roles (tenant_id, name)
         SELECT $1, $2
         WHERE NOT EXISTS (
-            SELECT 1 FROM auth.roles r
+            SELECT 1 FROM roles r
             WHERE r.tenant_id = $1 AND r.name = $2
         )
         "#,
@@ -123,7 +123,7 @@ pub async fn run(pool: &PgPool, input: &SeedInput) -> Result<(), String> {
         let user_id = Uuid::new_v4();
         let inserted_user = sqlx::query(
             r#"
-            INSERT INTO auth.users (id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, failed_attempts, created_at, updated_at)
+            INSERT INTO users (id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, failed_attempts, created_at, updated_at)
             VALUES ($1, $2, $3, $4, $5, NULL, NULL, NULL, $6, 'active', false, 0, $7, $7)
             ON CONFLICT (tenant_id, email) DO NOTHING
             "#,
@@ -147,7 +147,7 @@ pub async fn run(pool: &PgPool, input: &SeedInput) -> Result<(), String> {
 
         // Resolve user id (new or existing) and add to Launchpad Admins group
         let existing_user_id: Option<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM auth.users WHERE tenant_id = $1 AND email = $2",
+            "SELECT id FROM users WHERE tenant_id = $1 AND email = $2",
         )
         .bind(&input.tenant_id)
         .bind(&email)
@@ -157,7 +157,7 @@ pub async fn run(pool: &PgPool, input: &SeedInput) -> Result<(), String> {
 
         if let Some(uid) = existing_user_id {
             let role_id: Uuid = sqlx::query_scalar(
-                "SELECT id FROM auth.roles WHERE tenant_id = $1 AND name = $2",
+                "SELECT id FROM roles WHERE tenant_id = $1 AND name = $2",
             )
             .bind(&input.tenant_id)
             .bind(&input.role_name)
@@ -167,7 +167,7 @@ pub async fn run(pool: &PgPool, input: &SeedInput) -> Result<(), String> {
 
             sqlx::query(
                 r#"
-                INSERT INTO auth.user_roles (user_id, role_id)
+                INSERT INTO user_roles (user_id, role_id)
                 VALUES ($1, $2)
                 ON CONFLICT (user_id, role_id) DO NOTHING
                 "#,

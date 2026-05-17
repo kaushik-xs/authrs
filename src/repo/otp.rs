@@ -1,4 +1,4 @@
-//! OTP codes repository (auth.otp_codes).
+//! OTP codes repository (otp_codes).
 
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
@@ -40,7 +40,7 @@ impl OtpRepo {
         let id = Uuid::new_v4();
         sqlx::query(
             r#"
-            INSERT INTO auth.otp_codes (id, tenant_id, identifier, channel, code, purpose, expires_at)
+            INSERT INTO otp_codes (id, tenant_id, identifier, channel, code, purpose, expires_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             "#,
         )
@@ -69,7 +69,7 @@ impl OtpRepo {
             sqlx::query_as::<_, (Uuid, String, String, String, String, String, DateTime<Utc>, i32, DateTime<Utc>)>(
                 r#"
                 SELECT id, tenant_id, identifier, channel, code, purpose, expires_at, attempt_count, created_at
-                FROM auth.otp_codes
+                FROM otp_codes
                 WHERE tenant_id = $1 AND LOWER(identifier) = LOWER($2) AND channel = $3 AND purpose = $4 AND expires_at > now()
                 ORDER BY created_at DESC
                 LIMIT 1
@@ -83,7 +83,7 @@ impl OtpRepo {
             sqlx::query_as::<_, (Uuid, String, String, String, String, String, DateTime<Utc>, i32, DateTime<Utc>)>(
                 r#"
                 SELECT id, tenant_id, identifier, channel, code, purpose, expires_at, attempt_count, created_at
-                FROM auth.otp_codes
+                FROM otp_codes
                 WHERE tenant_id = $1 AND identifier = $2 AND channel = $3 AND purpose = $4 AND expires_at > now()
                 ORDER BY created_at DESC
                 LIMIT 1
@@ -114,7 +114,7 @@ impl OtpRepo {
 
     pub async fn increment_attempts(&self, id: Uuid) -> Result<(), sqlx::Error> {
         sqlx::query(
-            "UPDATE auth.otp_codes SET attempt_count = attempt_count + 1 WHERE id = $1",
+            "UPDATE otp_codes SET attempt_count = attempt_count + 1 WHERE id = $1",
         )
         .bind(id)
         .execute(&self.pool)
@@ -124,7 +124,7 @@ impl OtpRepo {
 
     /// Remove OTP after successful use (one-time use).
     pub async fn delete(&self, id: Uuid) -> Result<(), sqlx::Error> {
-        sqlx::query("DELETE FROM auth.otp_codes WHERE id = $1")
+        sqlx::query("DELETE FROM otp_codes WHERE id = $1")
             .bind(id)
             .execute(&self.pool)
             .await?;

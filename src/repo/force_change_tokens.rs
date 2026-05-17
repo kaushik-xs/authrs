@@ -23,7 +23,7 @@ impl ForceChangeTokensRepo {
         expires_at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), AppError> {
         sqlx::query(
-            "DELETE FROM auth.force_change_tokens WHERE tenant_id = $1 AND user_id = $2",
+            "DELETE FROM force_change_tokens WHERE tenant_id = $1 AND user_id = $2",
         )
         .bind(tenant_id)
         .bind(user_id)
@@ -31,7 +31,7 @@ impl ForceChangeTokensRepo {
         .await?;
 
         sqlx::query(
-            r#"INSERT INTO auth.force_change_tokens (tenant_id, user_id, token, expires_at)
+            r#"INSERT INTO force_change_tokens (tenant_id, user_id, token, expires_at)
                VALUES ($1, $2, $3, $4)"#,
         )
         .bind(tenant_id)
@@ -46,7 +46,7 @@ impl ForceChangeTokensRepo {
     /// Find a valid (non-expired) token and return (tenant_id, user_id). Returns None if missing or expired.
     pub async fn get_valid(&self, token: &str) -> Result<Option<(String, Uuid)>, AppError> {
         let row = sqlx::query_as::<_, (String, Uuid)>(
-            "SELECT tenant_id, user_id FROM auth.force_change_tokens WHERE token = $1 AND expires_at > now()",
+            "SELECT tenant_id, user_id FROM force_change_tokens WHERE token = $1 AND expires_at > now()",
         )
         .bind(token)
         .fetch_optional(&self.pool)
@@ -56,7 +56,7 @@ impl ForceChangeTokensRepo {
 
     /// Delete a token after it has been consumed.
     pub async fn delete_by_token(&self, token: &str) -> Result<(), AppError> {
-        sqlx::query("DELETE FROM auth.force_change_tokens WHERE token = $1")
+        sqlx::query("DELETE FROM force_change_tokens WHERE token = $1")
             .bind(token)
             .execute(&self.pool)
             .await?;

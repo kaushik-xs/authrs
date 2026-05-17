@@ -23,9 +23,9 @@ impl RolesRepo {
         let rows = sqlx::query_as::<_, (String,)>(
             r#"
             SELECT DISTINCT p.name
-            FROM auth.permissions p
-            INNER JOIN auth.role_permissions rp ON rp.permission_id = p.id
-            INNER JOIN auth.user_roles ur ON ur.role_id = rp.role_id
+            FROM permissions p
+            INNER JOIN role_permissions rp ON rp.permission_id = p.id
+            INNER JOIN user_roles ur ON ur.role_id = rp.role_id
             WHERE ur.user_id = $1 AND p.tenant_id = $2
             "#,
         )
@@ -41,8 +41,8 @@ impl RolesRepo {
         let rows = sqlx::query_as::<_, (String,)>(
             r#"
             SELECT r.name
-            FROM auth.roles r
-            INNER JOIN auth.user_roles ur ON ur.role_id = r.id
+            FROM roles r
+            INNER JOIN user_roles ur ON ur.role_id = r.id
             WHERE ur.user_id = $1 AND r.tenant_id = $2
             ORDER BY r.name
             "#,
@@ -63,10 +63,10 @@ impl RolesRepo {
     ) -> Result<(), AppError> {
         let r = sqlx::query(
             r#"
-            INSERT INTO auth.user_roles (user_id, role_id)
+            INSERT INTO user_roles (user_id, role_id)
             SELECT $1, $2
-            WHERE EXISTS (SELECT 1 FROM auth.users u WHERE u.id = $1 AND u.tenant_id = $3)
-            AND EXISTS (SELECT 1 FROM auth.roles r WHERE r.id = $2 AND r.tenant_id = $3)
+            WHERE EXISTS (SELECT 1 FROM users u WHERE u.id = $1 AND u.tenant_id = $3)
+            AND EXISTS (SELECT 1 FROM roles r WHERE r.id = $2 AND r.tenant_id = $3)
             "#,
         )
         .bind(user_id)
@@ -89,7 +89,7 @@ impl RolesRepo {
         role_id: Uuid,
     ) -> Result<bool, AppError> {
         let r = sqlx::query(
-            "DELETE FROM auth.user_roles WHERE user_id = $1 AND role_id = $2",
+            "DELETE FROM user_roles WHERE user_id = $1 AND role_id = $2",
         )
         .bind(user_id)
         .bind(role_id)
@@ -112,7 +112,7 @@ impl RolesRepo {
         }
         let id = Uuid::new_v4();
         sqlx::query(
-            "INSERT INTO auth.roles (id, tenant_id, name) VALUES ($1, $2, $3)",
+            "INSERT INTO roles (id, tenant_id, name) VALUES ($1, $2, $3)",
         )
         .bind(id)
         .bind(tenant_id)
@@ -128,7 +128,7 @@ impl RolesRepo {
         tenant_id: &str,
     ) -> Result<Vec<(Uuid, String)>, AppError> {
         let rows = sqlx::query_as::<_, (Uuid, String)>(
-            "SELECT id, name FROM auth.roles WHERE tenant_id = $1 ORDER BY name",
+            "SELECT id, name FROM roles WHERE tenant_id = $1 ORDER BY name",
         )
         .bind(tenant_id)
         .fetch_all(&self.pool)
@@ -143,7 +143,7 @@ impl RolesRepo {
         role_name: &str,
     ) -> Result<Option<Uuid>, AppError> {
         let id = sqlx::query_scalar(
-            "SELECT id FROM auth.roles WHERE tenant_id = $1 AND name = $2",
+            "SELECT id FROM roles WHERE tenant_id = $1 AND name = $2",
         )
         .bind(tenant_id)
         .bind(role_name)
