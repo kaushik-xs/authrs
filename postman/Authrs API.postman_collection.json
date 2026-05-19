@@ -328,6 +328,36 @@
           }
         },
         {
+          "name": "OAuth callback",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/oauth/{{provider}}/callback",
+              "host": ["{{baseUrl}}"],
+              "path": ["oauth", "{{provider}}", "callback"],
+              "query": [
+                {
+                  "key": "code",
+                  "value": "",
+                  "description": "Authorization code returned by the OAuth provider"
+                },
+                {
+                  "key": "state",
+                  "value": "",
+                  "description": "State parameter for CSRF protection"
+                }
+              ]
+            },
+            "description": "OAuth provider callback — receives the authorization code and state from the provider and completes the OAuth flow."
+          }
+        },
+        {
           "name": "Forgot password",
           "request": {
             "method": "POST",
@@ -530,6 +560,40 @@
             ],
             "url": "{{baseUrl}}/session/logout/all"
           }
+        },
+        {
+          "name": "Force change password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.sessionToken) {",
+                  "    pm.collectionVariables.set('sessionToken', json.sessionToken);",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"changeToken\": \"{{resetToken}}\",\n  \"newPassword\": \"{{newPassword}}\",\n  \"retypePassword\": \"{{newPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/session/force-change-password",
+            "description": "Complete a forced password change using the changeToken returned by login when passwordChangeRequired is true. Returns a new session token on success."
+          }
         }
       ]
     },
@@ -721,7 +785,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"newPassword\": \"{{newPassword}}\",\n  \"retypePassword\": \"{{newPassword}}\"\n}"
+              "raw": "{\n  \"newPassword\": \"{{newPassword}}\",\n  \"retypePassword\": \"{{newPassword}}\",\n  \"forcePasswordChange\": false\n}"
             },
             "url": "{{baseUrl}}/admin/users/{{userId}}/reset-password"
           }
