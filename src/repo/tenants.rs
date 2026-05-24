@@ -36,4 +36,21 @@ impl TenantsRepo {
             created_at: r.created_at,
         }))
     }
+
+    pub async fn list_all(&self) -> Result<Vec<Tenant>, AppError> {
+        let rows = sqlx::query_as::<_, TenantRow>(
+            "SELECT id, name, status, created_at FROM tenants ORDER BY name",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| Tenant {
+                id: r.id,
+                name: r.name,
+                status: r.status,
+                created_at: r.created_at,
+            })
+            .collect())
+    }
 }
