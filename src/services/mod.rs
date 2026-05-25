@@ -6,3 +6,5 @@ pub mod rate_limit;
 pub mod mfa;
 pub mod oauth;
 pub mod rbac;
+pub mod permissions;
+pub mod packages;

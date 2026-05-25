@@ -12,6 +12,7 @@ pub mod admin;
 pub mod health;
 pub mod spec;
 pub mod platform;
+pub mod packages;
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
@@ -24,5 +25,6 @@ pub fn router() -> Router<Arc<AppState>> {
         .nest("/mfa", mfa::router())
         .nest("/session", session::router())
         .nest("/admin", admin::router())
+        .nest("/admin", packages::router())
         .merge(platform::router())
 }

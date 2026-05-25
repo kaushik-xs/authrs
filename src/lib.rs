@@ -7,6 +7,7 @@ pub mod error;
 pub mod api;
 pub mod domain;
 pub mod openapi;
+pub mod policy;
 pub mod routes;
 pub mod services;
 pub mod repo;

@@ -52,6 +52,9 @@ metrics-exporter-prometheus = "0.13"
 
 async-trait = "0.1"
 
+# Policy engine
+cedar-policy = "4"
+
 # Email (SMTP); builder + smtp-transport required for Message and AsyncSmtpTransport
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1", "tokio1-native-tls"] }
 

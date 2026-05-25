@@ -11,6 +11,7 @@ use uuid::Uuid;
 use crate::api::state::AppState;
 use crate::api::tenant::TenantId;
 use crate::error::AppError;
+use crate::policy::domain::PermissionDocument;
 use std::sync::Arc;
 
 #[derive(Deserialize)]
@@ -33,8 +34,13 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/users/:user_id/reset-password", post(admin_reset_password))
         .route("/roles", post(admin_create_role))
         .route("/roles", get(admin_list_roles))
+        .route("/roles/:role_id/permissions", post(admin_attach_permission_to_role))
+        .route("/roles/:role_id/permissions", get(admin_list_role_permissions))
+        .route("/roles/:role_id/permissions/:permission_id", delete(admin_detach_permission_from_role))
         .route("/permissions", post(admin_create_permission))
         .route("/permissions", get(admin_list_permissions))
+        .route("/permissions/:permission_id", get(admin_get_permission))
+        .route("/permissions/:permission_id", delete(admin_delete_permission))
         .route("/kv_store", get(admin_kv_list))
         .route("/kv_store/:group_key/:key", get(admin_kv_get))
         .route("/kv_store/:group_key/:key", put(admin_kv_put))
@@ -233,12 +239,157 @@ async fn admin_list_roles(
         .collect();
     Ok(Json(serde_json::json!({ "roles": roles_json })))
 }
-async fn admin_create_permission() -> &'static str {
-    "admin create permission placeholder"
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreatePermissionBody {
+    name: String,
+    #[serde(default)]
+    description: Option<String>,
+    document: PermissionDocument,
 }
-async fn admin_list_permissions() -> &'static str {
-    "admin list permissions placeholder"
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AttachPermissionBody {
+    permission_id: Uuid,
 }
+
+async fn admin_create_permission(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Json(body): Json<CreatePermissionBody>,
+) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), AppError> {
+    let resolved_doc = state
+        .permissions_service
+        .resolve_principals(&tenant_id.0, &body.document)
+        .await?;
+
+    // Validate by compiling — reject invalid documents before saving
+    crate::policy::compiler::compile(&resolved_doc, "validation-pass")
+        .map_err(|e| AppError::BadRequest(format!("Invalid permission document: {e}")))?;
+
+    let id = state
+        .permissions_service
+        .repo()
+        .create(
+            &tenant_id.0,
+            &body.name,
+            body.description.as_deref(),
+            &resolved_doc,
+        )
+        .await?;
+
+    state.permissions_service.evict(&tenant_id.0);
+
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(serde_json::json!({ "id": id, "name": body.name })),
+    ))
+}
+
+async fn admin_list_permissions(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let perms = state
+        .permissions_service
+        .repo()
+        .list(&tenant_id.0)
+        .await?;
+    let out: Vec<serde_json::Value> = perms
+        .into_iter()
+        .map(|(id, name, desc, doc)| {
+            serde_json::json!({ "id": id, "name": name, "description": desc, "document": doc })
+        })
+        .collect();
+    Ok(Json(serde_json::json!({ "permissions": out })))
+}
+
+async fn admin_get_permission(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Path(permission_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let (name, desc, doc) = state
+        .permissions_service
+        .repo()
+        .get(&tenant_id.0, permission_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Permission not found".to_string()))?;
+    Ok(Json(
+        serde_json::json!({ "id": permission_id, "name": name, "description": desc, "document": doc }),
+    ))
+}
+
+async fn admin_delete_permission(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Path(permission_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let deleted = state
+        .permissions_service
+        .repo()
+        .delete(&tenant_id.0, permission_id)
+        .await?;
+    if !deleted {
+        return Err(AppError::NotFound("Permission not found".to_string()));
+    }
+    state.permissions_service.evict(&tenant_id.0);
+    Ok(Json(serde_json::json!({ "message": "Permission deleted" })))
+}
+
+async fn admin_attach_permission_to_role(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Path(role_id): Path<Uuid>,
+    Json(body): Json<AttachPermissionBody>,
+) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), AppError> {
+    state
+        .permissions_service
+        .repo()
+        .attach_to_role(&tenant_id.0, role_id, body.permission_id)
+        .await?;
+    state.permissions_service.evict(&tenant_id.0);
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(serde_json::json!({ "message": "Permission attached to role" })),
+    ))
+}
+
+async fn admin_detach_permission_from_role(
+    State(state): State<Arc<AppState>>,
+    Path((role_id, permission_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let removed = state
+        .permissions_service
+        .repo()
+        .detach_from_role(role_id, permission_id)
+        .await?;
+    if !removed {
+        return Err(AppError::NotFound(
+            "Permission-role assignment not found".to_string(),
+        ));
+    }
+    Ok(Json(serde_json::json!({ "message": "Permission detached from role" })))
+}
+
+async fn admin_list_role_permissions(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Path(role_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let perms = state
+        .permissions_service
+        .repo()
+        .list_for_role(&tenant_id.0, role_id)
+        .await?;
+    let out: Vec<serde_json::Value> = perms
+        .into_iter()
+        .map(|(id, name, doc)| serde_json::json!({ "id": id, "name": name, "document": doc }))
+        .collect();
+    Ok(Json(serde_json::json!({ "permissions": out })))
+}
+
 async fn admin_kv_list() -> &'static str {
     "admin kv list placeholder"
 }

@@ -1,23 +1,29 @@
 //! Application state shared across routes.
 
-use crate::middleware::tenant::TenantState;
+use cedar_policy::Schema;
+use std::sync::{Arc, RwLock};
+
 use crate::config::SmtpConfig;
+use crate::middleware::tenant::TenantState;
+use crate::policy::schema::{build_schema_str, parse_schema};
 use crate::repo::{
     force_change_tokens::ForceChangeTokensRepo,
     kv_store::KvStoreRepo,
     otp::OtpRepo,
+    packages::PackagesRepo,
     password_reset_tokens::PasswordResetTokensRepo,
+    permissions::PermissionsRepo,
     roles::RolesRepo,
+    sessions::PostgresSessionStore,
     tenants::TenantsRepo,
     users::UsersRepo,
 };
 use crate::services::auth::AuthService;
-use crate::services::tenant_config::TenantConfigLoader;
-use crate::repo::sessions::PostgresSessionStore;
+use crate::services::packages::PackagesService;
+use crate::services::permissions::PermissionsService;
 use crate::services::session::SessionStore;
-use std::sync::Arc;
+use crate::services::tenant_config::TenantConfigLoader;
 
-/// Full app state for routes that need DB, session store, auth, etc.
 #[derive(Clone)]
 pub struct AppState {
     pub tenant_state: TenantState,
@@ -28,6 +34,9 @@ pub struct AppState {
     pub otp_repo: OtpRepo,
     /// SMTP for sending OTP emails; None if email OTP is disabled.
     pub smtp_config: Option<SmtpConfig>,
+    pub permissions_service: PermissionsService,
+    pub packages_service: PackagesService,
+    pub cedar_schema: Arc<RwLock<Schema>>,
 }
 
 impl AppState {
@@ -64,6 +73,21 @@ impl AppState {
             sessions_repo.clone(),
         );
         let otp_repo = OtpRepo::new(pool.clone());
+
+        // Cedar: start with an empty schema — PackagesService::rebuild_schema() is called
+        // at server startup after migrations run to load registered packages from DB.
+        let empty_schema = parse_schema(&build_schema_str(&[], &[]))
+            .map_err(|e| crate::error::AppError::Internal(format!("Cedar schema init: {e}")))?;
+        let cedar_schema = Arc::new(RwLock::new(empty_schema));
+
+        let permissions_service = PermissionsService::new(PermissionsRepo::new(pool.clone()));
+
+        let packages_service = PackagesService::new(
+            PackagesRepo::new(pool.clone()),
+            Arc::clone(&cedar_schema),
+            permissions_service.clone(),
+        );
+
         Ok(Self {
             tenant_state,
             auth_service,
@@ -71,6 +95,9 @@ impl AppState {
             sessions_repo,
             otp_repo,
             smtp_config,
+            permissions_service,
+            packages_service,
+            cedar_schema,
         })
     }
 }
