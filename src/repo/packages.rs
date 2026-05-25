@@ -13,15 +13,22 @@ impl PackagesRepo {
         Self { pool }
     }
 
-    /// Replace all tables for a package (full sync).
-    pub async fn sync_tables(
+    /// Replace all tables and actions for a package atomically (full sync).
+    /// Deletes all existing package_id data first, then reinserts everything in one transaction.
+    pub async fn sync_package(
         &self,
         package_id: &str,
         table_names: &[String],
+        action_names: &[String],
     ) -> Result<(), AppError> {
         let mut tx = self.pool.begin().await?;
 
         sqlx::query("DELETE FROM _auth_packages WHERE package_id = $1")
+            .bind(package_id)
+            .execute(&mut *tx)
+            .await?;
+
+        sqlx::query("DELETE FROM _auth_package_actions WHERE package_id = $1")
             .bind(package_id)
             .execute(&mut *tx)
             .await?;
@@ -36,23 +43,6 @@ impl PackagesRepo {
             .execute(&mut *tx)
             .await?;
         }
-
-        tx.commit().await?;
-        Ok(())
-    }
-
-    /// Replace all custom actions for a package (full sync).
-    pub async fn sync_custom_actions(
-        &self,
-        package_id: &str,
-        action_names: &[String],
-    ) -> Result<(), AppError> {
-        let mut tx = self.pool.begin().await?;
-
-        sqlx::query("DELETE FROM _auth_package_actions WHERE package_id = $1")
-            .bind(package_id)
-            .execute(&mut *tx)
-            .await?;
 
         for action_name in action_names {
             sqlx::query(

@@ -28,18 +28,32 @@ impl PackagesService {
         }
     }
 
-    /// Sync a package: upsert its tables and custom actions, rebuild Cedar schema,
-    /// and evict all PolicySet caches so the next request recompiles.
+    /// Sync a package: delete all existing package_id data, then reinsert tables and all actions
+    /// (CRUD + custom) atomically, rebuild Cedar schema, and evict all PolicySet caches.
+    ///
+    /// CRUD actions (get/post/patch/put/delete{Table}) are derived from the table list and stored
+    /// alongside any explicit custom actions so _auth_package_actions is a complete registry.
     pub async fn sync(
         &self,
         package_id: &str,
         tables: &[String],
         custom_actions: &[String],
     ) -> Result<(), AppError> {
-        self.repo.sync_tables(package_id, tables).await?;
-        self.repo
-            .sync_custom_actions(package_id, custom_actions)
-            .await?;
+        // Derive CRUD actions from the table list (mirrors build_schema_str logic)
+        let mut all_actions: Vec<String> = tables
+            .iter()
+            .flat_map(|table| {
+                let pascal = crate::policy::schema::to_pascal_case(table);
+                ["get", "post", "patch", "put", "delete"]
+                    .iter()
+                    .map(move |verb| format!("{verb}{pascal}"))
+            })
+            .collect();
+        all_actions.extend_from_slice(custom_actions);
+        all_actions.sort();
+        all_actions.dedup();
+
+        self.repo.sync_package(package_id, tables, &all_actions).await?;
 
         self.rebuild_schema().await?;
         self.permissions_service.evict_all();
