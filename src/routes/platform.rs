@@ -12,7 +12,7 @@ use crate::api::state::AppState;
 use crate::error::AppError;
 
 const BUILDER_TENANT_ID: &str = "builder";
-const ALLOWED_ROLES: [&str; 2] = ["Builder Developer Admin", "Builder Developer"];
+const ALLOWED_ROLES: [&str; 2] = ["builder_developer_admin", "builder_developer"];
 
 fn bearer_token(headers: &axum::http::HeaderMap) -> Result<&str, AppError> {
     let auth = headers
