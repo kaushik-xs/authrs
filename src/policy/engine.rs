@@ -9,7 +9,8 @@ use crate::policy::schema::to_pascal_case;
 
 pub struct AuthzRequest<'a> {
     pub user_id: Uuid,
-    pub role_ids: &'a [Uuid],
+    /// Role names taken directly from the session — no DB lookup needed.
+    pub role_names: &'a [String],
     /// Derived action name e.g. "patchMaterials" or a custom action
     pub action: &'a str,
     /// Hierarchical resource path e.g. "service:core/package:manufacturing_core/table:materials"
@@ -29,7 +30,7 @@ pub fn authorize(req: &AuthzRequest, policy_set: &PolicySet, schema: &Schema) ->
     };
 
     let mut all_entities = build_resource_chain(req.resource);
-    all_entities.push(build_user_entity(req.user_id, req.role_ids));
+    all_entities.push(build_user_entity(req.user_id, req.role_names));
 
     let entities =
         Entities::from_entities(all_entities, Some(schema)).unwrap_or_else(|_| Entities::empty());
@@ -92,12 +93,12 @@ fn resource_root_uid(resource: &str) -> Result<EntityUid, ()> {
         .map_err(|_| ())
 }
 
-fn build_user_entity(user_id: Uuid, role_ids: &[Uuid]) -> Entity {
+fn build_user_entity(user_id: Uuid, role_names: &[String]) -> Entity {
     let uid = user_uid(user_id);
-    let parents: std::collections::HashSet<EntityUid> = role_ids
+    let parents: std::collections::HashSet<EntityUid> = role_names
         .iter()
-        .filter_map(|rid| {
-            format!("AuthRS::Role::\"{}\"", rid).parse().ok()
+        .filter_map(|name| {
+            format!("AuthRS::Role::\"{}\"", name).parse().ok()
         })
         .collect();
     Entity::new_no_attrs(uid, parents)

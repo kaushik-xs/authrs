@@ -246,20 +246,20 @@ impl PermissionsRepo {
             .collect()
     }
 
-    /// Resolve a role name to its UUID within a tenant.
-    pub async fn resolve_role_id(
+    /// Resolve a role name or uid to the role's uid within a tenant.
+    pub async fn resolve_role_uid(
         &self,
         tenant_id: &str,
-        role_name: &str,
-    ) -> Result<Option<Uuid>, AppError> {
-        let id = sqlx::query_scalar(
-            "SELECT id FROM roles WHERE tenant_id = $1 AND name = $2",
+        identifier: &str,
+    ) -> Result<Option<String>, AppError> {
+        let uid = sqlx::query_scalar(
+            "SELECT uid FROM roles WHERE tenant_id = $1 AND (uid = $2 OR name = $2)",
         )
         .bind(tenant_id)
-        .bind(role_name)
+        .bind(identifier)
         .fetch_optional(&self.pool)
         .await?;
-        Ok(id)
+        Ok(uid)
     }
 
     /// Resolve a user identifier (email or username) to their UUID within a tenant.

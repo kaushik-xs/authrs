@@ -35,29 +35,14 @@ pub async fn require_permission(
         .ok_or_else(|| AppError::Unauthorized("Missing Bearer token".to_string()))?
         .to_string();
 
-    // 2. Load session
+    // 2. Load session — role names are already in the payload, no extra DB queries needed
     let session = state
         .session_store
         .get(&token)
         .await?
         .ok_or_else(|| AppError::Unauthorized("Session not found or expired".to_string()))?;
 
-    // 3. Resolve role UUIDs from session role names
-    let role_ids: Vec<uuid::Uuid> = {
-        let roles_repo = state.auth_service.roles_repo();
-        let mut ids = Vec::new();
-        for role_name in &session.roles {
-            if let Some(id) = roles_repo
-                .get_role_id_by_name(&session.tenant_id, role_name)
-                .await?
-            {
-                ids.push(id);
-            }
-        }
-        ids
-    };
-
-    // 4. Derive action name
+    // 3. Derive action name
     let http_method = req.method().as_str();
     let action = match action_override {
         Some(a) => a.to_string(),
@@ -68,7 +53,7 @@ pub async fn require_permission(
         })?,
     };
 
-    // 5. Build Cedar context from session + request metadata
+    // 4. Build Cedar context from session + request metadata
     let mfa_verified = session.permissions.contains(&"mfa_verified".to_string());
     let context = serde_json::json!({
         "tenant_id": session.tenant_id,
@@ -76,27 +61,27 @@ pub async fn require_permission(
         "mfa_verified": mfa_verified,
     });
 
-    // 6. Load PolicySet (cached per tenant)
-    let schema_guard = state.cedar_schema.read().unwrap();
+    // 5. Load PolicySet (cached per tenant) — no lock held across await
     let policy_set = state
         .permissions_service
-        .get_policy_set(&session.tenant_id, &schema_guard)
+        .get_policy_set(&session.tenant_id)
         .await?;
 
-    // 7. Evaluate
-    let decision = authorize(
-        &AuthzRequest {
-            user_id: session.user_id,
-            role_ids: &role_ids,
-            action: &action,
-            resource: resource_path,
-            context,
-        },
-        &policy_set,
-        &schema_guard,
-    );
-
-    drop(schema_guard);
+    // 6. Evaluate — acquire schema lock only for the synchronous authorize call
+    let decision = {
+        let schema_guard = state.cedar_schema.read().unwrap();
+        authorize(
+            &AuthzRequest {
+                user_id: session.user_id,
+                role_names: &session.roles,
+                action: &action,
+                resource: resource_path,
+                context,
+            },
+            &policy_set,
+            &schema_guard,
+        )
+    };
 
     match decision {
         cedar_policy::Decision::Allow => Ok(next.run(req).await),

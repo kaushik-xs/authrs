@@ -91,19 +91,21 @@ pub async fn run(pool: &PgPool, input: &SeedInput) -> Result<(), String> {
         }
     );
 
-    // 2. Seeded role (SEED_ROLE_NAME)
+    // 2. Seeded role (SEED_ROLE_NAME) — uid is the stable snake_case slug, write-once
+    let role_uid = crate::repo::roles::to_uid(&input.role_name);
     let _ = sqlx::query(
         r#"
-        INSERT INTO roles (tenant_id, name)
-        SELECT $1, $2
+        INSERT INTO roles (tenant_id, name, uid)
+        SELECT $1, $2, $3
         WHERE NOT EXISTS (
             SELECT 1 FROM roles r
-            WHERE r.tenant_id = $1 AND r.name = $2
+            WHERE r.tenant_id = $1 AND r.uid = $3
         )
         "#,
     )
     .bind(&input.tenant_id)
     .bind(&input.role_name)
+    .bind(&role_uid)
     .execute(pool)
     .await
     .map_err(|e| e.to_string())?;

@@ -1,6 +1,6 @@
 //! PermissionsService: principal resolution, PolicySet cache, and eviction.
 
-use cedar_policy::{PolicySet, Schema};
+use cedar_policy::PolicySet;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use uuid::Uuid;
@@ -25,12 +25,9 @@ impl PermissionsService {
     }
 
     /// Returns the compiled PolicySet for a tenant, loading from DB on cache miss.
-    pub async fn get_policy_set(
-        &self,
-        tenant_id: &str,
-        schema: &Schema,
-    ) -> Result<Arc<PolicySet>, AppError> {
-        // Fast path: read-lock cache hit
+    /// Does not hold any lock across await points — safe to call in async Axum handlers.
+    pub async fn get_policy_set(&self, tenant_id: &str) -> Result<Arc<PolicySet>, AppError> {
+        // Fast path: read-lock cache hit (no await while holding lock)
         {
             let guard = self.cache.read().unwrap();
             if let Some(ps) = guard.get(tenant_id) {
@@ -38,10 +35,9 @@ impl PermissionsService {
             }
         }
 
-        // Slow path: load all permissions for this tenant and compile
+        // Slow path: load and compile outside the lock
         let docs = self.repo.list_all_for_tenant(tenant_id).await?;
         let mut set = PolicySet::new();
-
         for (id, doc) in docs {
             let compiled = compile(&doc, &id.to_string())?;
             for policy in compiled.policies() {
@@ -50,7 +46,6 @@ impl PermissionsService {
             }
         }
 
-        let _ = schema; // schema used for request validation in engine, not here
         let ps = Arc::new(set);
         self.cache
             .write()
@@ -69,9 +64,9 @@ impl PermissionsService {
         self.cache.write().unwrap().clear();
     }
 
-    /// Resolve human-readable principal identifiers to UUID form.
-    /// "role:<name>" → "role:<uuid>", "user:<email/username>" → "user:<uuid>"
-    /// Already-UUID values and "*" pass through unchanged.
+    /// Resolve principal identifiers to their stable form before saving.
+    /// "role:<name or uid>" → "role:<uid>", "user:<email/username>" → "user:<uuid>"
+    /// "*" and already-resolved values pass through unchanged.
     pub async fn resolve_principals(
         &self,
         tenant_id: &str,
@@ -102,30 +97,27 @@ impl PermissionsService {
             .split_once(':')
             .ok_or_else(|| AppError::BadRequest(format!("Invalid principal format: {principal}")))?;
 
-        // Already a UUID — pass through
-        if Uuid::parse_str(value).is_ok() {
-            return Ok(principal.to_string());
-        }
-
         match prefix {
             "role" => {
-                let uuid = self
+                // Roles use uid as the stable Cedar identifier.
+                // Accept name or uid — resolve to uid either way.
+                let uid = self
                     .repo
-                    .resolve_role_id(tenant_id, value)
+                    .resolve_role_uid(tenant_id, value)
                     .await?
-                    .ok_or_else(|| {
-                        AppError::BadRequest(format!("Role not found: {value}"))
-                    })?;
-                Ok(format!("role:{uuid}"))
+                    .ok_or_else(|| AppError::BadRequest(format!("Role not found: {value}")))?;
+                Ok(format!("role:{uid}"))
             }
             "user" => {
+                // Users without a UUID are resolved by email or username.
+                if Uuid::parse_str(value).is_ok() {
+                    return Ok(principal.to_string());
+                }
                 let uuid = self
                     .repo
                     .resolve_user_id(tenant_id, value)
                     .await?
-                    .ok_or_else(|| {
-                        AppError::BadRequest(format!("User not found: {value}"))
-                    })?;
+                    .ok_or_else(|| AppError::BadRequest(format!("User not found: {value}")))?;
                 Ok(format!("user:{uuid}"))
             }
             other => Err(AppError::BadRequest(format!(

@@ -12,6 +12,8 @@ use crate::api::state::AppState;
 use crate::api::tenant::TenantId;
 use crate::error::AppError;
 use crate::policy::domain::PermissionDocument;
+use crate::policy::engine::{authorize, AuthzRequest};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Deserialize)]
@@ -39,6 +41,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/roles/:role_id/permissions/:permission_id", delete(admin_detach_permission_from_role))
         .route("/permissions", post(admin_create_permission))
         .route("/permissions", get(admin_list_permissions))
+        .route("/permissions/check", post(admin_check_permission))
         .route("/permissions/:permission_id", get(admin_get_permission))
         .route("/permissions/:permission_id", delete(admin_delete_permission))
         .route("/kv_store", get(admin_kv_list))
@@ -88,9 +91,13 @@ async fn admin_list_user_roles(
     let roles = state
         .auth_service
         .roles_repo()
-        .get_user_roles(&tenant_id.0, user_id)
+        .get_user_roles_detail(&tenant_id.0, user_id)
         .await?;
-    Ok(Json(serde_json::json!({ "roles": roles })))
+    let roles_json: Vec<serde_json::Value> = roles
+        .into_iter()
+        .map(|(id, name, uid)| serde_json::json!({ "id": id, "name": name, "uid": uid }))
+        .collect();
+    Ok(Json(serde_json::json!({ "roles": roles_json })))
 }
 
 async fn admin_assign_role_to_user(
@@ -214,14 +221,14 @@ async fn admin_create_role(
     tenant_id: TenantId,
     Json(body): Json<AdminCreateRoleBody>,
 ) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), AppError> {
-    let (id, name) = state
+    let (id, name, uid) = state
         .auth_service
         .roles_repo()
         .create(&tenant_id.0, &body.name)
         .await?;
     Ok((
         axum::http::StatusCode::CREATED,
-        Json(serde_json::json!({ "id": id, "name": name })),
+        Json(serde_json::json!({ "id": id, "name": name, "uid": uid })),
     ))
 }
 async fn admin_list_roles(
@@ -235,7 +242,7 @@ async fn admin_list_roles(
         .await?;
     let roles_json: Vec<serde_json::Value> = roles
         .into_iter()
-        .map(|(id, name)| serde_json::json!({ "id": id, "name": name }))
+        .map(|(id, name, uid)| serde_json::json!({ "id": id, "name": name, "uid": uid }))
         .collect();
     Ok(Json(serde_json::json!({ "roles": roles_json })))
 }
@@ -388,6 +395,88 @@ async fn admin_list_role_permissions(
         .map(|(id, name, doc)| serde_json::json!({ "id": id, "name": name, "document": doc }))
         .collect();
     Ok(Json(serde_json::json!({ "permissions": out })))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CheckPermissionBody {
+    user_id: Uuid,
+    resource: String,
+    /// If provided, evaluate only this action.
+    /// If omitted, evaluate all actions relevant to the resource scope.
+    #[serde(default)]
+    action: Option<String>,
+    #[serde(default)]
+    context: Option<serde_json::Value>,
+}
+
+async fn admin_check_permission(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Json(body): Json<CheckPermissionBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let role_names = state
+        .auth_service
+        .roles_repo()
+        .get_user_roles(&tenant_id.0, body.user_id)
+        .await?;
+
+    let context = body.context.unwrap_or_else(|| serde_json::json!({}));
+    let resource = body.resource.clone();
+
+    // Load PolicySet outside any lock — safe across await
+    let policy_set = state
+        .permissions_service
+        .get_policy_set(&tenant_id.0)
+        .await?;
+
+    if let Some(action) = body.action {
+        let allowed = {
+            let schema = state.cedar_schema.read().unwrap();
+            is_allowed(&AuthzRequest {
+                user_id: body.user_id,
+                role_names: &role_names,
+                action: &action,
+                resource: &resource,
+                context,
+            }, &policy_set, &schema)
+        };
+        return Ok(Json(serde_json::json!({
+            "resource": resource,
+            "action": action,
+            "allowed": allowed,
+        })));
+    }
+
+    // All-actions check: fetch relevant actions then evaluate each
+    let actions = state
+        .packages_service
+        .get_actions_for_resource(&resource)
+        .await?;
+
+    let mut decisions: HashMap<String, bool> = HashMap::new();
+    {
+        let schema = state.cedar_schema.read().unwrap();
+        for action in &actions {
+            let allowed = is_allowed(&AuthzRequest {
+                user_id: body.user_id,
+                role_names: &role_names,
+                action,
+                resource: &resource,
+                context: context.clone(),
+            }, &policy_set, &schema);
+            decisions.insert(action.clone(), allowed);
+        }
+    }
+
+    Ok(Json(serde_json::json!({
+        "resource": resource,
+        "decisions": decisions,
+    })))
+}
+
+fn is_allowed(req: &AuthzRequest, policy_set: &cedar_policy::PolicySet, schema: &cedar_policy::Schema) -> bool {
+    matches!(authorize(req, policy_set, schema), cedar_policy::Decision::Allow)
 }
 
 async fn admin_kv_list() -> &'static str {

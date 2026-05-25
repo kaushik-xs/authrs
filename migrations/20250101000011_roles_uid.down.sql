@@ -1,0 +1,2 @@
+ALTER TABLE roles DROP CONSTRAINT IF EXISTS uq_roles_tenant_uid;
+ALTER TABLE roles DROP COLUMN IF EXISTS uid;

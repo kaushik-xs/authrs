@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Authrs API",
-    "description": "Multi-tenant auth: users, roles (assigned only to users), permissions. All relevant routes require header X-Tenant-ID unless noted.",
+    "description": "Multi-tenant auth: users, roles (assigned only to users), permissions (Cedar policies). All relevant routes require header X-Tenant-ID unless noted.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -23,6 +23,14 @@
     },
     {
       "key": "roleId",
+      "value": ""
+    },
+    {
+      "key": "roleUid",
+      "value": ""
+    },
+    {
+      "key": "permissionId",
       "value": ""
     },
     {
@@ -598,7 +606,7 @@
       ]
     },
     {
-      "name": "Admin",
+      "name": "Admin — Users",
       "item": [
         {
           "name": "Create user",
@@ -685,7 +693,7 @@
                 }
               ]
             },
-            "description": "List all users for the tenant. Sets userId from first user (for Assign role / List user roles). Add ?includeArchived=true to include archived users."
+            "description": "List all users for the tenant. Sets userId from first user. Add ?includeArchived=true to include archived users."
           }
         },
         {
@@ -703,7 +711,32 @@
               }
             ],
             "url": "{{baseUrl}}/admin/users/{{userId}}/archive",
-            "description": "Soft-delete a user by setting their status to 'archived'. Archived users cannot log in and are excluded from List users by default. Returns 400 if the user is already archived."
+            "description": "Soft-delete a user by setting their status to 'archived'. Archived users cannot log in and are excluded from List users by default."
+          }
+        },
+        {
+          "name": "Reset user password (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newPassword\": \"{{newPassword}}\",\n  \"retypePassword\": \"{{newPassword}}\",\n  \"forcePasswordChange\": false\n}"
+            },
+            "url": "{{baseUrl}}/admin/users/{{userId}}/reset-password"
           }
         },
         {
@@ -720,7 +753,8 @@
                 "value": "Bearer {{sessionToken}}"
               }
             ],
-            "url": "{{baseUrl}}/admin/users/{{userId}}/roles"
+            "url": "{{baseUrl}}/admin/users/{{userId}}/roles",
+            "description": "Returns roles assigned to the user. Each role includes id, name, and uid."
           }
         },
         {
@@ -764,32 +798,12 @@
             ],
             "url": "{{baseUrl}}/admin/users/{{userId}}/roles/{{roleId}}"
           }
-        },
-        {
-          "name": "Reset user password (admin)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "X-Tenant-ID",
-                "value": "{{tenantId}}"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{sessionToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"newPassword\": \"{{newPassword}}\",\n  \"retypePassword\": \"{{newPassword}}\",\n  \"forcePasswordChange\": false\n}"
-            },
-            "url": "{{baseUrl}}/admin/users/{{userId}}/reset-password"
-          }
-        },
+        }
+      ]
+    },
+    {
+      "name": "Admin — Roles",
+      "item": [
         {
           "name": "Create role",
           "event": [
@@ -801,6 +815,9 @@
                   "  const json = pm.response.json();",
                   "  if (json.id) {",
                   "    pm.collectionVariables.set('roleId', json.id);",
+                  "  }",
+                  "  if (json.uid) {",
+                  "    pm.collectionVariables.set('roleUid', json.uid);",
                   "  }",
                   "}"
                 ],
@@ -829,7 +846,7 @@
               "raw": "{\n  \"name\": \"{{roleName}}\"\n}"
             },
             "url": "{{baseUrl}}/admin/roles",
-            "description": "Create a role for the tenant. Name must be unique per tenant. Sets roleId from response (for Assign role to user)."
+            "description": "Create a role. A stable uid is auto-generated from the name (snake_case, write-once). Response includes id, name, and uid. Sets roleId and roleUid variables."
           }
         },
         {
@@ -841,8 +858,13 @@
                 "exec": [
                   "if (pm.response.code === 200) {",
                   "  const json = pm.response.json();",
-                  "  if (json.roles && json.roles.length > 0 && json.roles[0].id) {",
-                  "    pm.collectionVariables.set('roleId', json.roles[0].id);",
+                  "  if (json.roles && json.roles.length > 0) {",
+                  "    if (json.roles[0].id) {",
+                  "      pm.collectionVariables.set('roleId', json.roles[0].id);",
+                  "    }",
+                  "    if (json.roles[0].uid) {",
+                  "      pm.collectionVariables.set('roleUid', json.roles[0].uid);",
+                  "    }",
                   "  }",
                   "}"
                 ],
@@ -863,11 +885,11 @@
               }
             ],
             "url": "{{baseUrl}}/admin/roles",
-            "description": "List all roles for the tenant. Sets roleId from first role (for Assign role to user)."
+            "description": "List all roles for the tenant. Each role includes id, name, and uid. Sets roleId and roleUid from first role."
           }
         },
         {
-          "name": "Create permission",
+          "name": "Attach permission to role",
           "request": {
             "method": "POST",
             "header": [
@@ -886,9 +908,92 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"\",\n  \"description\": \"\"\n}"
+              "raw": "{\n  \"permissionId\": \"{{permissionId}}\"\n}"
             },
-            "url": "{{baseUrl}}/admin/permissions"
+            "url": "{{baseUrl}}/admin/roles/{{roleId}}/permissions",
+            "description": "Attach a permission (Cedar policy) to a role. The policy takes effect on the next request (cache evicted)."
+          }
+        },
+        {
+          "name": "List role permissions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/roles/{{roleId}}/permissions",
+            "description": "List all permissions attached to a role. Returns id, name, and document for each."
+          }
+        },
+        {
+          "name": "Detach permission from role",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/roles/{{roleId}}/permissions/{{permissionId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Permissions",
+      "item": [
+        {
+          "name": "Create permission",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.id) {",
+                  "    pm.collectionVariables.set('permissionId', json.id);",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"allow-editor-read-materials\",\n  \"description\": \"Allow editors to read materials\",\n  \"document\": {\n    \"version\": \"1.0\",\n    \"statements\": [\n      {\n        \"sid\": \"AllowEditorReadMaterials\",\n        \"effect\": \"Allow\",\n        \"principals\": [\"role:{{roleUid}}\"],\n        \"actions\": [\"getMaterials\"],\n        \"resources\": [\"service:core/package:manufacturing_core/table:materials\"],\n        \"conditions\": []\n      }\n    ]\n  }\n}"
+            },
+            "url": "{{baseUrl}}/admin/permissions",
+            "description": "Create a Cedar permission policy. Principals accept role:<uid>, role:<name>, user:<uuid>, user:<email>, user:<username>, or *. The document is validated before saving. Sets permissionId variable."
           }
         },
         {
@@ -905,9 +1010,185 @@
                 "value": "Bearer {{sessionToken}}"
               }
             ],
-            "url": "{{baseUrl}}/admin/permissions"
+            "url": "{{baseUrl}}/admin/permissions",
+            "description": "List all permissions for the tenant. Returns id, name, description, and document for each."
           }
         },
+        {
+          "name": "Get permission",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/permissions/{{permissionId}}"
+          }
+        },
+        {
+          "name": "Delete permission",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/permissions/{{permissionId}}",
+            "description": "Delete a permission. Also evicts the tenant's PolicySet cache."
+          }
+        },
+        {
+          "name": "Check permission (single action)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"resource\": \"service:core/package:manufacturing_core/table:materials\",\n  \"action\": \"getMaterials\",\n  \"context\": {}\n}"
+            },
+            "url": "{{baseUrl}}/admin/permissions/check",
+            "description": "Evaluate Cedar policy for a specific user, resource, and action. Returns { resource, action, allowed: true|false }."
+          }
+        },
+        {
+          "name": "Check permission (all actions for table)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"resource\": \"service:core/package:manufacturing_core/table:materials\",\n  \"context\": {}\n}"
+            },
+            "url": "{{baseUrl}}/admin/permissions/check",
+            "description": "Omit action to evaluate all actions for the resource scope. Returns { resource, decisions: { actionName: true|false, ... } }."
+          }
+        },
+        {
+          "name": "Check permission (all actions for package)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"resource\": \"service:core/package:manufacturing_core\",\n  \"context\": {}\n}"
+            },
+            "url": "{{baseUrl}}/admin/permissions/check",
+            "description": "Check all actions across every table in a package."
+          }
+        },
+        {
+          "name": "Check permission (all actions for service)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"resource\": \"service:core\",\n  \"context\": {}\n}"
+            },
+            "url": "{{baseUrl}}/admin/permissions/check",
+            "description": "Check all actions across all packages and tables in the service."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Packages",
+      "item": [
+        {
+          "name": "Sync package",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"packageId\": \"manufacturing_core\",\n  \"tables\": [\"materials\", \"bom_headers\", \"bom_lines\"],\n  \"customActions\": [\"approveBom\", \"rejectBom\"]\n}"
+            },
+            "url": "{{baseUrl}}/admin/packages/sync",
+            "description": "Register or update a package's tables and custom actions. Rebuilds the Cedar schema and evicts all PolicySet caches. Called by architect-sdk after a package install. Standard CRUD actions (getMaterials, postMaterials, etc.) are auto-generated from table names."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — KV Store",
+      "item": [
         {
           "name": "List KV store keys",
           "request": {
