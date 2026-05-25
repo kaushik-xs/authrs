@@ -26,18 +26,37 @@ pub fn router() -> Router<Arc<AppState>> {
 async fn list_actions(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let pairs = state.packages_service.list_all_actions().await?;
+    let (action_pairs, table_pairs) = tokio::try_join!(
+        state.packages_service.list_all_actions(),
+        state.packages_service.list_all_tables(),
+    )?;
 
-    let mut map: HashMap<String, Vec<String>> = HashMap::new();
-    for (pkg_id, action_name) in pairs {
-        map.entry(pkg_id).or_default().push(action_name);
+    // Group actions by package_id
+    let mut actions_map: HashMap<String, Vec<String>> = HashMap::new();
+    for (pkg_id, action_name) in action_pairs {
+        actions_map.entry(pkg_id).or_default().push(action_name);
     }
 
-    let mut packages: Vec<serde_json::Value> = map
+    // Group tables by package_id
+    let mut tables_map: HashMap<String, Vec<String>> = HashMap::new();
+    for (pkg_id, table_name) in table_pairs {
+        tables_map.entry(pkg_id).or_default().push(table_name);
+    }
+
+    let all_pkg_ids: std::collections::HashSet<String> = actions_map
+        .keys()
+        .chain(tables_map.keys())
+        .cloned()
+        .collect();
+
+    let mut packages: Vec<serde_json::Value> = all_pkg_ids
         .into_iter()
-        .map(|(pkg_id, mut actions)| {
+        .map(|pkg_id| {
+            let mut actions = actions_map.remove(&pkg_id).unwrap_or_default();
+            let mut tables = tables_map.remove(&pkg_id).unwrap_or_default();
             actions.sort();
-            serde_json::json!({ "packageId": pkg_id, "actions": actions })
+            tables.sort();
+            serde_json::json!({ "packageId": pkg_id, "tables": tables, "actions": actions })
         })
         .collect();
     packages.sort_by(|a, b| {

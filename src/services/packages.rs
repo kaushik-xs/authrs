@@ -80,6 +80,11 @@ impl PackagesService {
         self.repo.list_custom_actions().await
     }
 
+    /// Returns all (package_id, table_name) pairs from _auth_packages.
+    pub async fn list_all_tables(&self) -> Result<Vec<(String, String)>, AppError> {
+        self.repo.list_tables().await
+    }
+
     /// Returns all action names relevant to the given resource path.
     ///
     /// Scope is determined by the deepest segment in the path:
