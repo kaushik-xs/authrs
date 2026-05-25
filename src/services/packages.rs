@@ -75,6 +75,11 @@ impl PackagesService {
         Arc::clone(&self.cedar_schema)
     }
 
+    /// Returns all (package_id, action_name) pairs from _auth_package_actions.
+    pub async fn list_all_actions(&self) -> Result<Vec<(String, String)>, AppError> {
+        self.repo.list_custom_actions().await
+    }
+
     /// Returns all action names relevant to the given resource path.
     ///
     /// Scope is determined by the deepest segment in the path:
