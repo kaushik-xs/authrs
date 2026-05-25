@@ -1183,6 +1183,20 @@
             "url": "{{baseUrl}}/admin/packages/sync",
             "description": "Register or update a package's tables and custom actions. Rebuilds the Cedar schema and evicts all PolicySet caches. Called by architect-sdk after a package install. Standard CRUD actions (getMaterials, postMaterials, etc.) are auto-generated from table names."
           }
+        },
+        {
+          "name": "List package actions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/packages/actions",
+            "description": "List all registered packages with their tables and actions. Returns { packages: [{ packageId, tables: [...], actions: [...] }] } sorted by packageId."
+          }
         }
       ]
     },
@@ -1263,6 +1277,25 @@
               }
             ],
             "url": "{{baseUrl}}/admin/kv_store/{{groupKey}}/{{kvKey}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Platform",
+      "item": [
+        {
+          "name": "List tenants",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/tenants",
+            "description": "List all tenants. Restricted to sessions in the 'builder' tenant with role 'builder_developer_admin' or 'builder_developer'. Login to the builder tenant first to obtain a valid session token."
           }
         }
       ]
