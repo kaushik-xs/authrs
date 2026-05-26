@@ -423,11 +423,12 @@ async fn admin_check_permission(
         "permission check request"
     );
 
-    let role_names = state
-        .auth_service
-        .roles_repo()
-        .get_user_roles(&tenant_id.0, body.user_id)
-        .await?;
+    let (role_names, role_ids) = {
+        let repo = state.auth_service.roles_repo();
+        let names = repo.get_user_roles(&tenant_id.0, body.user_id).await?;
+        let ids   = repo.get_user_role_ids(&tenant_id.0, body.user_id).await?;
+        (names, ids)
+    };
 
     tracing::debug!(
         tenant_id = %tenant_id.0,
@@ -439,10 +440,12 @@ async fn admin_check_permission(
     let context = body.context.unwrap_or_else(|| serde_json::json!({}));
     let resource = body.resource.clone();
 
-    // Load PolicySet outside any lock — safe across await
+    // Load only the permissions attached to the user's roles.
+    // Policies use "principals": ["*"] scoped by role-permission attachment —
+    // a user with no matching role gets an empty PolicySet and is denied.
     let policy_set = state
         .permissions_service
-        .get_policy_set(&tenant_id.0)
+        .get_policy_set_for_roles(&tenant_id.0, &role_ids)
         .await?;
 
     if let Some(action) = body.action {

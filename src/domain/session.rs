@@ -8,7 +8,11 @@ use uuid::Uuid;
 pub struct SessionPayload {
     pub tenant_id: String,
     pub user_id: Uuid,
+    /// Role UIDs (slug strings) — used for Cedar entity hierarchy.
     pub roles: Vec<String>,
+    /// Role primary-key UUIDs — used for role-scoped PolicySet loading.
+    #[serde(default)]
+    pub role_ids: Vec<Uuid>,
     pub permissions: Vec<String>,
     pub ip: Option<String>,
     pub user_agent: Option<String>,

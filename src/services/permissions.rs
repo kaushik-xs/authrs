@@ -126,6 +126,25 @@ impl PermissionsService {
         }
     }
 
+    /// Compile a PolicySet from only the permissions attached to the given role IDs.
+    /// Not cached — scoped per-user at call time. Use for authorization checks.
+    pub async fn get_policy_set_for_roles(
+        &self,
+        tenant_id: &str,
+        role_ids: &[Uuid],
+    ) -> Result<Arc<PolicySet>, AppError> {
+        let docs = self.repo.get_for_roles(tenant_id, role_ids).await?;
+        let mut set = PolicySet::new();
+        for (id, doc) in docs {
+            let compiled = compile(&doc, &id.to_string())?;
+            for policy in compiled.policies() {
+                set.add(policy.clone())
+                    .map_err(|e| AppError::Internal(e.to_string()))?;
+            }
+        }
+        Ok(Arc::new(set))
+    }
+
     pub fn repo(&self) -> &PermissionsRepo {
         &self.repo
     }

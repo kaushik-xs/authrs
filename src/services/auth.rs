@@ -249,7 +249,8 @@ impl AuthService {
         ip: Option<&str>,
         user_agent: Option<&str>,
     ) -> Result<LoginResult, AppError> {
-        let roles = self.roles_repo.get_user_roles(tenant_id, user.id).await.unwrap_or_default();
+        let roles      = self.roles_repo.get_user_roles(&tenant_id, user.id).await.unwrap_or_default();
+        let role_ids   = self.roles_repo.get_user_role_ids(&tenant_id, user.id).await.unwrap_or_default();
         let permissions = self
             .roles_repo
             .get_user_permissions(tenant_id, user.id)
@@ -266,6 +267,7 @@ impl AuthService {
             tenant_id: tenant_id.to_string(),
             user_id: user.id,
             roles,
+            role_ids,
             permissions,
             ip: ip.map(String::from),
             user_agent: user_agent.map(String::from),

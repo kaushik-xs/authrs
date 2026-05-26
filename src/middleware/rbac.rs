@@ -61,10 +61,10 @@ pub async fn require_permission(
         "mfa_verified": mfa_verified,
     });
 
-    // 5. Load PolicySet (cached per tenant) — no lock held across await
+    // 5. Load PolicySet scoped to the user's roles — no lock held across await
     let policy_set = state
         .permissions_service
-        .get_policy_set(&session.tenant_id)
+        .get_policy_set_for_roles(&session.tenant_id, &session.role_ids)
         .await?;
 
     // 6. Evaluate — acquire schema lock only for the synchronous authorize call
