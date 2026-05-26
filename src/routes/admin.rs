@@ -415,11 +415,26 @@ async fn admin_check_permission(
     tenant_id: TenantId,
     Json(body): Json<CheckPermissionBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    tracing::info!(
+        tenant_id = %tenant_id.0,
+        user_id = %body.user_id,
+        resource = %body.resource,
+        action = ?body.action,
+        "permission check request"
+    );
+
     let role_names = state
         .auth_service
         .roles_repo()
         .get_user_roles(&tenant_id.0, body.user_id)
         .await?;
+
+    tracing::debug!(
+        tenant_id = %tenant_id.0,
+        user_id = %body.user_id,
+        roles = ?role_names,
+        "resolved user roles"
+    );
 
     let context = body.context.unwrap_or_else(|| serde_json::json!({}));
     let resource = body.resource.clone();
@@ -441,6 +456,14 @@ async fn admin_check_permission(
                 context,
             }, &policy_set, &schema)
         };
+        tracing::info!(
+            tenant_id = %tenant_id.0,
+            user_id = %body.user_id,
+            resource = %resource,
+            action = %action,
+            allowed,
+            "permission decision"
+        );
         return Ok(Json(serde_json::json!({
             "resource": resource,
             "action": action,
@@ -468,6 +491,14 @@ async fn admin_check_permission(
             decisions.insert(action.clone(), allowed);
         }
     }
+
+    tracing::info!(
+        tenant_id = %tenant_id.0,
+        user_id = %body.user_id,
+        resource = %resource,
+        decisions = ?decisions,
+        "permission decisions (all actions)"
+    );
 
     Ok(Json(serde_json::json!({
         "resource": resource,

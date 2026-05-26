@@ -22,30 +22,77 @@ pub fn authorize(req: &AuthzRequest, policy_set: &PolicySet, schema: &Schema) ->
     let principal_uid = user_uid(req.user_id);
     let resource_uid = match resource_root_uid(req.resource) {
         Ok(uid) => uid,
-        Err(_) => return Decision::Deny,
+        Err(_) => {
+            tracing::warn!(
+                user_id = %req.user_id,
+                resource = %req.resource,
+                "deny: failed to parse resource UID"
+            );
+            return Decision::Deny;
+        }
     };
     let action_uid = match action_uid(req.action) {
         Ok(uid) => uid,
-        Err(_) => return Decision::Deny,
+        Err(_) => {
+            tracing::warn!(
+                user_id = %req.user_id,
+                action = %req.action,
+                "deny: failed to parse action UID"
+            );
+            return Decision::Deny;
+        }
     };
 
     let mut all_entities = build_resource_chain(req.resource);
     all_entities.push(build_user_entity(req.user_id, req.role_names));
 
     let entities =
-        Entities::from_entities(all_entities, Some(schema)).unwrap_or_else(|_| Entities::empty());
+        Entities::from_entities(all_entities, Some(schema)).unwrap_or_else(|e| {
+            tracing::warn!(
+                user_id = %req.user_id,
+                error = %e,
+                "entity graph build failed, falling back to empty entities"
+            );
+            Entities::empty()
+        });
 
     let ctx = Context::from_json_value(req.context.clone(), None)
-        .unwrap_or_else(|_| Context::empty());
+        .unwrap_or_else(|e| {
+            tracing::warn!(
+                user_id = %req.user_id,
+                error = %e,
+                "context parse failed, falling back to empty context"
+            );
+            Context::empty()
+        });
 
     let request = match Request::new(principal_uid, action_uid, resource_uid, ctx, Some(schema)) {
         Ok(r) => r,
-        Err(_) => return Decision::Deny,
+        Err(e) => {
+            tracing::warn!(
+                user_id = %req.user_id,
+                resource = %req.resource,
+                action = %req.action,
+                error = %e,
+                "deny: failed to build Cedar request"
+            );
+            return Decision::Deny;
+        }
     };
 
-    Authorizer::new()
+    let decision = Authorizer::new()
         .is_authorized(&request, policy_set, &entities)
-        .decision()
+        .decision();
+
+    tracing::debug!(
+        user_id = %req.user_id,
+        resource = %req.resource,
+        action = %req.action,
+        allowed = matches!(decision, Decision::Allow),
+        "cedar authorization decision"
+    );
+
+    decision
 }
 
 /// Derives the Cedar action name from an HTTP verb and a resource path.
