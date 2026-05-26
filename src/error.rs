@@ -16,6 +16,7 @@ pub enum AppError {
     NotFound(String),
     Conflict(String),
     Locked(String),
+    AccessExpired(String),
     TooManyRequests(String),
     Internal(String),
 }
@@ -29,6 +30,7 @@ impl Display for AppError {
             AppError::NotFound(s) => write!(f, "Not found: {}", s),
             AppError::Conflict(s) => write!(f, "Conflict: {}", s),
             AppError::Locked(s) => write!(f, "Account locked: {}", s),
+            AppError::AccessExpired(s) => write!(f, "Access expired: {}", s),
             AppError::TooManyRequests(s) => write!(f, "Rate limit: {}", s),
             AppError::Internal(s) => write!(f, "Internal error: {}", s),
         }
@@ -53,6 +55,7 @@ impl IntoResponse for AppError {
             AppError::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
             AppError::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
             AppError::Locked(_) => (StatusCode::LOCKED, "account_locked"),
+            AppError::AccessExpired(_) => (StatusCode::FORBIDDEN, "access_expired"),
             AppError::TooManyRequests(_) => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
             AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error"),
         };

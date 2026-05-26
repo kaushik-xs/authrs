@@ -740,6 +740,58 @@
           }
         },
         {
+          "name": "Set access validity",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accessValidUntil\": \"2026-12-31T23:59:59Z\"\n}"
+            },
+            "url": "{{baseUrl}}/admin/users/{{userId}}/access-validity",
+            "description": "Set or clear the access expiry for a user. Once the datetime passes, the user cannot log in and receives a 403 access_expired error. Send null to remove the expiry (access becomes indefinite)."
+          }
+        },
+        {
+          "name": "Clear access validity",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accessValidUntil\": null\n}"
+            },
+            "url": "{{baseUrl}}/admin/users/{{userId}}/access-validity",
+            "description": "Remove the access expiry from a user so their access is indefinite."
+          }
+        },
+        {
           "name": "List user roles",
           "request": {
             "method": "GET",

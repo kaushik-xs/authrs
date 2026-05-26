@@ -201,6 +201,11 @@ impl AuthService {
                 return Err(AppError::Locked("Account is temporarily locked".to_string()));
             }
         }
+        if let Some(valid_until) = user.access_valid_until {
+            if Utc::now() > valid_until {
+                return Err(AppError::AccessExpired("Account access has expired".to_string()));
+            }
+        }
         let effective = self.effective_login_methods(tenant_id, user.id, user).await?;
         if !effective.contains(&method) {
             return Err(AppError::Forbidden("This login method is not allowed for your account".to_string()));
@@ -315,6 +320,11 @@ impl AuthService {
         if let Some(locked_until) = user.locked_until {
             if locked_until > Utc::now() {
                 return Err(AppError::Locked("Account is temporarily locked".to_string()));
+            }
+        }
+        if let Some(valid_until) = user.access_valid_until {
+            if Utc::now() > valid_until {
+                return Err(AppError::AccessExpired("Account access has expired".to_string()));
             }
         }
         let effective = self.effective_login_methods(tenant_id, user.id, &user).await?;
@@ -549,6 +559,12 @@ impl AuthService {
             .await?
             .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
 
+        if let Some(valid_until) = user.access_valid_until {
+            if Utc::now() > valid_until {
+                return Err(AppError::AccessExpired("Account access has expired".to_string()));
+            }
+        }
+
         let password_hash = self.hash_password(new_password)?;
         self.users_repo.update_password(&tenant_id, user_id, &password_hash).await?;
         self.users_repo.set_force_password_change(&tenant_id, user_id, false).await?;
@@ -622,6 +638,22 @@ impl AuthService {
             )
             .await?;
         Ok(user)
+    }
+
+    pub async fn admin_set_access_valid_until(
+        &self,
+        tenant_id: &str,
+        user_id: Uuid,
+        access_valid_until: Option<chrono::DateTime<Utc>>,
+    ) -> Result<(), AppError> {
+        let _user = self
+            .users_repo
+            .get_by_id(tenant_id, user_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+        self.users_repo
+            .set_access_valid_until(tenant_id, user_id, access_valid_until)
+            .await
     }
 
     pub async fn admin_archive_user(&self, tenant_id: &str, user_id: Uuid) -> Result<(), AppError> {

@@ -21,6 +21,7 @@ struct UserRow {
     force_password_change: bool,
     failed_attempts: i32,
     locked_until: Option<chrono::DateTime<chrono::Utc>>,
+    access_valid_until: Option<chrono::DateTime<chrono::Utc>>,
     created_at: chrono::DateTime<chrono::Utc>,
     updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -51,6 +52,7 @@ impl UsersRepo {
             force_password_change: r.force_password_change,
             failed_attempts: r.failed_attempts,
             locked_until: r.locked_until,
+            access_valid_until: r.access_valid_until,
             created_at: r.created_at,
             updated_at: r.updated_at,
         }
@@ -101,6 +103,7 @@ impl UsersRepo {
             force_password_change: false,
             failed_attempts: 0,
             locked_until: None,
+            access_valid_until: None,
             created_at: now,
             updated_at: now,
         };
@@ -112,14 +115,14 @@ impl UsersRepo {
     pub async fn list(&self, tenant_id: &str, include_archived: bool) -> Result<Vec<User>, AppError> {
         let rows = if include_archived {
             sqlx::query_as::<_, UserRow>(
-                "SELECT id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, force_password_change, failed_attempts, locked_until, created_at, updated_at FROM users WHERE tenant_id = $1 ORDER BY created_at DESC",
+                "SELECT id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, force_password_change, failed_attempts, locked_until, access_valid_until, created_at, updated_at FROM users WHERE tenant_id = $1 ORDER BY created_at DESC",
             )
             .bind(tenant_id)
             .fetch_all(&self.pool)
             .await?
         } else {
             sqlx::query_as::<_, UserRow>(
-                "SELECT id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, force_password_change, failed_attempts, locked_until, created_at, updated_at FROM users WHERE tenant_id = $1 AND status != 'archived' ORDER BY created_at DESC",
+                "SELECT id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, force_password_change, failed_attempts, locked_until, access_valid_until, created_at, updated_at FROM users WHERE tenant_id = $1 AND status != 'archived' ORDER BY created_at DESC",
             )
             .bind(tenant_id)
             .fetch_all(&self.pool)
@@ -141,7 +144,7 @@ impl UsersRepo {
 
     pub async fn get_by_id(&self, tenant_id: &str, user_id: Uuid) -> Result<Option<User>, AppError> {
         let row = sqlx::query_as::<_, UserRow>(
-            "SELECT id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, force_password_change, failed_attempts, locked_until, created_at, updated_at FROM users WHERE tenant_id = $1 AND id = $2",
+            "SELECT id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, force_password_change, failed_attempts, locked_until, access_valid_until, created_at, updated_at FROM users WHERE tenant_id = $1 AND id = $2",
         )
         .bind(tenant_id)
         .bind(user_id)
@@ -152,7 +155,7 @@ impl UsersRepo {
 
     pub async fn get_by_email(&self, tenant_id: &str, email: &str) -> Result<Option<User>, AppError> {
         let row = sqlx::query_as::<_, UserRow>(
-            "SELECT id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, force_password_change, failed_attempts, locked_until, created_at, updated_at FROM users WHERE tenant_id = $1 AND email = $2",
+            "SELECT id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, force_password_change, failed_attempts, locked_until, access_valid_until, created_at, updated_at FROM users WHERE tenant_id = $1 AND email = $2",
         )
         .bind(tenant_id)
         .bind(email)
@@ -164,7 +167,7 @@ impl UsersRepo {
     /// Look up user by email (case-insensitive). Used for OTP verify.
     pub async fn get_by_email_insensitive(&self, tenant_id: &str, email: &str) -> Result<Option<User>, AppError> {
         let row = sqlx::query_as::<_, UserRow>(
-            "SELECT id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, force_password_change, failed_attempts, locked_until, created_at, updated_at FROM users WHERE tenant_id = $1 AND LOWER(email) = LOWER($2)",
+            "SELECT id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, force_password_change, failed_attempts, locked_until, access_valid_until, created_at, updated_at FROM users WHERE tenant_id = $1 AND LOWER(email) = LOWER($2)",
         )
         .bind(tenant_id)
         .bind(email)
@@ -175,7 +178,7 @@ impl UsersRepo {
 
     pub async fn get_by_username(&self, tenant_id: &str, username: &str) -> Result<Option<User>, AppError> {
         let row = sqlx::query_as::<_, UserRow>(
-            "SELECT id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, force_password_change, failed_attempts, locked_until, created_at, updated_at FROM users WHERE tenant_id = $1 AND username = $2",
+            "SELECT id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, force_password_change, failed_attempts, locked_until, access_valid_until, created_at, updated_at FROM users WHERE tenant_id = $1 AND username = $2",
         )
         .bind(tenant_id)
         .bind(username)
@@ -232,6 +235,23 @@ impl UsersRepo {
             "UPDATE users SET force_password_change = $1, updated_at = now() WHERE tenant_id = $2 AND id = $3",
         )
         .bind(value)
+        .bind(tenant_id)
+        .bind(user_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn set_access_valid_until(
+        &self,
+        tenant_id: &str,
+        user_id: Uuid,
+        access_valid_until: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<(), AppError> {
+        sqlx::query(
+            "UPDATE users SET access_valid_until = $1, updated_at = now() WHERE tenant_id = $2 AND id = $3",
+        )
+        .bind(access_valid_until)
         .bind(tenant_id)
         .bind(user_id)
         .execute(&self.pool)

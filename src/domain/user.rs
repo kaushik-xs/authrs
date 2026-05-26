@@ -22,6 +22,7 @@ pub struct User {
     pub force_password_change: bool,
     pub failed_attempts: i32,
     pub locked_until: Option<chrono::DateTime<chrono::Utc>>,
+    pub access_valid_until: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }

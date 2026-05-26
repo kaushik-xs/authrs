@@ -2,7 +2,7 @@
 
 use axum::{
     extract::{Path, Query, State},
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post, put},
     Json, Router,
 };
 use serde::Deserialize;
@@ -15,6 +15,12 @@ use crate::policy::domain::PermissionDocument;
 use crate::policy::engine::{authorize, AuthzRequest};
 use std::collections::HashMap;
 use std::sync::Arc;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminSetAccessValidityBody {
+    access_valid_until: Option<chrono::DateTime<chrono::Utc>>,
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,6 +40,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/users/:user_id/roles/:role_id", delete(admin_remove_role_from_user))
         .route("/users/:user_id/archive", post(admin_archive_user))
         .route("/users/:user_id/reset-password", post(admin_reset_password))
+        .route("/users/:user_id/access-validity", patch(admin_set_access_validity))
         .route("/roles", post(admin_create_role))
         .route("/roles", get(admin_list_roles))
         .route("/roles/:role_id/permissions", post(admin_attach_permission_to_role))
@@ -202,6 +209,19 @@ async fn admin_list_users(
         .map(|u| serde_json::to_value(&u).unwrap_or_default())
         .collect();
     Ok(Json(serde_json::json!({ "users": users_json })))
+}
+
+async fn admin_set_access_validity(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Path(user_id): Path<Uuid>,
+    Json(body): Json<AdminSetAccessValidityBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    state
+        .auth_service
+        .admin_set_access_valid_until(&tenant_id.0, user_id, body.access_valid_until)
+        .await?;
+    Ok(Json(serde_json::json!({ "message": "Access validity updated." })))
 }
 
 async fn admin_archive_user(
