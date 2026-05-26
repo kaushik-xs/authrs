@@ -51,15 +51,15 @@ fn build_cedar_json(
         "principal": principal_clause,
         "action": {
             "op": "==",
-            "entity": { "type": "Action", "id": action }
+            "entity": { "type": "AuthRS::Action", "id": action }
         },
         "resource": resource_clause,
         "conditions": conditions
     })
 }
 
-/// "role:<uuid>"    → { op: "in",  entity: { type: "Role", id: "<uuid>" } }
-/// "user:<uuid>"    → { op: "==", entity: { type: "User", id: "<uuid>" } }
+/// "role:<uuid>"    → { op: "in",  entity: { type: "AuthRS::Role", id: "<uuid>" } }
+/// "user:<uuid>"    → { op: "==", entity: { type: "AuthRS::User", id: "<uuid>" } }
 /// "*"              → { op: "All" }
 fn parse_principal(principal: &str) -> serde_json::Value {
     if principal == "*" {
@@ -69,8 +69,8 @@ fn parse_principal(principal: &str) -> serde_json::Value {
         .split_once(':')
         .unwrap_or(("user", principal));
     let (op, entity_type) = match prefix {
-        "role" => ("in", "Role"),
-        _ => ("==", "User"),
+        "role" => ("in", "AuthRS::Role"),
+        _ => ("==", "AuthRS::User"),
     };
     json!({ "op": op, "entity": { "type": entity_type, "id": id } })
 }
@@ -81,13 +81,13 @@ fn parse_resource(resource: &str) -> serde_json::Value {
     let segments: Vec<&str> = resource.split('/').collect();
     let last = segments.last().copied().unwrap_or(resource);
     let entity_type = if last.starts_with("column:") {
-        "Column"
+        "AuthRS::Column"
     } else if last.starts_with("table:") {
-        "Table"
+        "AuthRS::Table"
     } else if last.starts_with("package:") {
-        "Package"
+        "AuthRS::Package"
     } else {
-        "Service"
+        "AuthRS::Service"
     };
 
     // Strip the type prefix from each segment to build the canonical id
