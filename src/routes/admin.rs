@@ -38,6 +38,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/users/:user_id/roles", get(admin_list_user_roles))
         .route("/users/:user_id/roles", post(admin_assign_role_to_user))
         .route("/users/:user_id/roles/:role_id", delete(admin_remove_role_from_user))
+        .route("/users/:user_id/groups", get(admin_list_user_groups))
         .route("/users/:user_id/archive", post(admin_archive_user))
         .route("/users/:user_id/reset-password", post(admin_reset_password))
         .route("/users/:user_id/access-validity", patch(admin_set_access_validity))
@@ -46,6 +47,16 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/roles/:role_id/permissions", post(admin_attach_permission_to_role))
         .route("/roles/:role_id/permissions", get(admin_list_role_permissions))
         .route("/roles/:role_id/permissions/:permission_id", delete(admin_detach_permission_from_role))
+        .route("/groups", post(admin_create_group))
+        .route("/groups", get(admin_list_groups))
+        .route("/groups/:group_id", get(admin_get_group))
+        .route("/groups/:group_id", delete(admin_delete_group))
+        .route("/groups/:group_id/users", post(admin_add_user_to_group))
+        .route("/groups/:group_id/users", get(admin_list_group_members))
+        .route("/groups/:group_id/users/:user_id", delete(admin_remove_user_from_group))
+        .route("/groups/:group_id/roles", post(admin_assign_role_to_group))
+        .route("/groups/:group_id/roles", get(admin_list_group_roles))
+        .route("/groups/:group_id/roles/:role_id", delete(admin_remove_role_from_group))
         .route("/permissions", post(admin_create_permission))
         .route("/permissions", get(admin_list_permissions))
         .route("/permissions/check", post(admin_check_permission))
@@ -417,6 +428,201 @@ async fn admin_list_role_permissions(
     Ok(Json(serde_json::json!({ "permissions": out })))
 }
 
+// ── Group handlers ────────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateGroupBody {
+    name: String,
+    #[serde(default)]
+    description: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AddUserToGroupBody {
+    user_id: Uuid,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AssignRoleToGroupBody {
+    role_id: Uuid,
+}
+
+async fn admin_create_group(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Json(body): Json<CreateGroupBody>,
+) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), AppError> {
+    let (id, name, uid) = state
+        .auth_service
+        .groups_repo()
+        .create(&tenant_id.0, &body.name, body.description.as_deref())
+        .await?;
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(serde_json::json!({ "id": id, "name": name, "uid": uid })),
+    ))
+}
+
+async fn admin_list_groups(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let groups = state.auth_service.groups_repo().list(&tenant_id.0).await?;
+    let out: Vec<serde_json::Value> = groups
+        .into_iter()
+        .map(|(id, name, uid, desc)| {
+            serde_json::json!({ "id": id, "name": name, "uid": uid, "description": desc })
+        })
+        .collect();
+    Ok(Json(serde_json::json!({ "groups": out })))
+}
+
+async fn admin_get_group(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Path(group_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let (name, uid, desc) = state
+        .auth_service
+        .groups_repo()
+        .get(&tenant_id.0, group_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Group not found".to_string()))?;
+    Ok(Json(
+        serde_json::json!({ "id": group_id, "name": name, "uid": uid, "description": desc }),
+    ))
+}
+
+async fn admin_delete_group(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Path(group_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let deleted = state
+        .auth_service
+        .groups_repo()
+        .delete(&tenant_id.0, group_id)
+        .await?;
+    if !deleted {
+        return Err(AppError::NotFound("Group not found".to_string()));
+    }
+    Ok(Json(serde_json::json!({ "message": "Group deleted" })))
+}
+
+async fn admin_add_user_to_group(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Path(group_id): Path<Uuid>,
+    Json(body): Json<AddUserToGroupBody>,
+) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), AppError> {
+    state
+        .auth_service
+        .groups_repo()
+        .add_user(&tenant_id.0, group_id, body.user_id)
+        .await?;
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(serde_json::json!({ "message": "User added to group" })),
+    ))
+}
+
+async fn admin_list_group_members(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Path(group_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let user_ids = state
+        .auth_service
+        .groups_repo()
+        .list_members(&tenant_id.0, group_id)
+        .await?;
+    Ok(Json(serde_json::json!({ "users": user_ids })))
+}
+
+async fn admin_remove_user_from_group(
+    State(state): State<Arc<AppState>>,
+    Path((group_id, user_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let removed = state
+        .auth_service
+        .groups_repo()
+        .remove_user(group_id, user_id)
+        .await?;
+    if !removed {
+        return Err(AppError::NotFound("User is not a member of this group".to_string()));
+    }
+    Ok(Json(serde_json::json!({ "message": "User removed from group" })))
+}
+
+async fn admin_list_user_groups(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Path(user_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let groups = state
+        .auth_service
+        .groups_repo()
+        .get_user_groups(&tenant_id.0, user_id)
+        .await?;
+    let out: Vec<serde_json::Value> = groups
+        .into_iter()
+        .map(|(id, name, uid)| serde_json::json!({ "id": id, "name": name, "uid": uid }))
+        .collect();
+    Ok(Json(serde_json::json!({ "groups": out })))
+}
+
+async fn admin_assign_role_to_group(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Path(group_id): Path<Uuid>,
+    Json(body): Json<AssignRoleToGroupBody>,
+) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), AppError> {
+    state
+        .auth_service
+        .groups_repo()
+        .assign_role(&tenant_id.0, group_id, body.role_id)
+        .await?;
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(serde_json::json!({ "message": "Role assigned to group" })),
+    ))
+}
+
+async fn admin_list_group_roles(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Path(group_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let roles = state
+        .auth_service
+        .groups_repo()
+        .list_group_roles(&tenant_id.0, group_id)
+        .await?;
+    let out: Vec<serde_json::Value> = roles
+        .into_iter()
+        .map(|(id, name, uid)| serde_json::json!({ "id": id, "name": name, "uid": uid }))
+        .collect();
+    Ok(Json(serde_json::json!({ "roles": out })))
+}
+
+async fn admin_remove_role_from_group(
+    State(state): State<Arc<AppState>>,
+    Path((group_id, role_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let removed = state
+        .auth_service
+        .groups_repo()
+        .remove_role(group_id, role_id)
+        .await?;
+    if !removed {
+        return Err(AppError::NotFound("Role is not assigned to this group".to_string()));
+    }
+    Ok(Json(serde_json::json!({ "message": "Role removed from group" })))
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CheckPermissionBody {
@@ -444,9 +650,22 @@ async fn admin_check_permission(
     );
 
     let (role_names, role_ids) = {
-        let repo = state.auth_service.roles_repo();
-        let names = repo.get_user_roles(&tenant_id.0, body.user_id).await?;
-        let ids   = repo.get_user_role_ids(&tenant_id.0, body.user_id).await?;
+        let roles_repo  = state.auth_service.roles_repo();
+        let groups_repo = state.auth_service.groups_repo();
+
+        let direct_names = roles_repo.get_user_roles(&tenant_id.0, body.user_id).await?;
+        let direct_ids   = roles_repo.get_user_role_ids(&tenant_id.0, body.user_id).await?;
+        let group_names  = groups_repo.get_user_group_role_uids(&tenant_id.0, body.user_id).await?;
+        let group_ids    = groups_repo.get_user_group_role_ids(&tenant_id.0, body.user_id).await?;
+
+        let mut seen_names = std::collections::HashSet::new();
+        let names: Vec<String> = direct_names.into_iter().chain(group_names)
+            .filter(|n| seen_names.insert(n.clone()))
+            .collect();
+        let mut seen_ids = std::collections::HashSet::new();
+        let ids: Vec<Uuid> = direct_ids.into_iter().chain(group_ids)
+            .filter(|id| seen_ids.insert(*id))
+            .collect();
         (names, ids)
     };
 

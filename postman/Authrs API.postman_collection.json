@@ -347,8 +347,14 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/oauth/{{provider}}/callback",
-              "host": ["{{baseUrl}}"],
-              "path": ["oauth", "{{provider}}", "callback"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "oauth",
+                "{{provider}}",
+                "callback"
+              ],
               "query": [
                 {
                   "key": "code",
@@ -362,7 +368,7 @@
                 }
               ]
             },
-            "description": "OAuth provider callback — receives the authorization code and state from the provider and completes the OAuth flow."
+            "description": "OAuth provider callback \u2014 receives the authorization code and state from the provider and completes the OAuth flow."
           }
         },
         {
@@ -606,7 +612,7 @@
       ]
     },
     {
-      "name": "Admin — Users",
+      "name": "Admin \u2014 Users",
       "item": [
         {
           "name": "Create user",
@@ -682,8 +688,13 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/admin/users",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "users"],
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users"
+              ],
               "query": [
                 {
                   "key": "includeArchived",
@@ -854,7 +865,7 @@
       ]
     },
     {
-      "name": "Admin — Roles",
+      "name": "Admin \u2014 Roles",
       "item": [
         {
           "name": "Create role",
@@ -1004,7 +1015,264 @@
       ]
     },
     {
-      "name": "Admin — Permissions",
+      "name": "Admin \u2014 Groups",
+      "item": [
+        {
+          "name": "Create group",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.id) { pm.collectionVariables.set('groupId', json.id); }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Engineering\",\n  \"description\": \"All engineering team members\"\n}"
+            },
+            "url": "{{baseUrl}}/admin/groups",
+            "description": "Create a group. Returns { id, name, uid }."
+          }
+        },
+        {
+          "name": "List groups",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.groups && json.groups.length > 0) {",
+                  "    pm.collectionVariables.set('groupId', json.groups[0].id);",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/groups",
+            "description": "List all groups for the tenant."
+          }
+        },
+        {
+          "name": "Get group",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/groups/{{groupId}}",
+            "description": "Get a single group by ID."
+          }
+        },
+        {
+          "name": "Delete group",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/groups/{{groupId}}",
+            "description": "Delete a group. Members are unlinked; assigned roles are removed."
+          }
+        },
+        {
+          "name": "Add user to group",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/admin/groups/{{groupId}}/users",
+            "description": "Add a user to a group. Both must exist in the tenant. Idempotent \u2014 adding an existing member is a no-op."
+          }
+        },
+        {
+          "name": "List group members",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/groups/{{groupId}}/users",
+            "description": "List all user IDs that are members of a group."
+          }
+        },
+        {
+          "name": "Remove user from group",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/groups/{{groupId}}/users/{{userId}}",
+            "description": "Remove a user from a group."
+          }
+        },
+        {
+          "name": "List user groups",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/users/{{userId}}/groups",
+            "description": "List all groups a user belongs to. Returns { groups: [{ id, name, uid }] }."
+          }
+        },
+        {
+          "name": "Assign role to group",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roleId\": \"{{roleId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/admin/groups/{{groupId}}/roles",
+            "description": "Assign a role to a group. All members of the group inherit this role. Idempotent."
+          }
+        },
+        {
+          "name": "List group roles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/groups/{{groupId}}/roles",
+            "description": "List roles assigned to a group. Members inherit all of these roles."
+          }
+        },
+        {
+          "name": "Remove role from group",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/groups/{{groupId}}/roles/{{roleId}}",
+            "description": "Remove a role assignment from a group."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin \u2014 Permissions",
       "item": [
         {
           "name": "Create permission",
@@ -1208,7 +1476,7 @@
       ]
     },
     {
-      "name": "Admin — Packages",
+      "name": "Admin \u2014 Packages",
       "item": [
         {
           "name": "Sync package",
@@ -1253,7 +1521,7 @@
       ]
     },
     {
-      "name": "Admin — KV Store",
+      "name": "Admin \u2014 KV Store",
       "item": [
         {
           "name": "List KV store keys",

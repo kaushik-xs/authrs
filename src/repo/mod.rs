@@ -5,6 +5,7 @@ pub mod tenants;
 pub mod kv_store;
 pub mod sessions_redis;
 pub mod roles;
+pub mod groups;
 pub mod permissions;
 pub mod packages;
 pub mod otp;

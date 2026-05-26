@@ -8,12 +8,18 @@ use uuid::Uuid;
 pub struct SessionPayload {
     pub tenant_id: String,
     pub user_id: Uuid,
-    /// Role UIDs (slug strings) — used for Cedar entity hierarchy.
+    /// Effective role UIDs (direct + inherited through groups) — Cedar entity hierarchy.
     pub roles: Vec<String>,
-    /// Role primary-key UUIDs — used for role-scoped PolicySet loading.
+    /// Effective role primary-key UUIDs (direct + via groups) — role-scoped PolicySet loading.
     #[serde(default)]
     pub role_ids: Vec<Uuid>,
     pub permissions: Vec<String>,
+    /// Group UIDs the user belongs to — Cedar `principal in UserGroup::""` policies.
+    #[serde(default)]
+    pub groups: Vec<String>,
+    /// Group primary-key UUIDs — used for admin lookups and group-scoped policy loading.
+    #[serde(default)]
+    pub group_ids: Vec<Uuid>,
     pub ip: Option<String>,
     pub user_agent: Option<String>,
     pub expires_at: chrono::DateTime<chrono::Utc>,

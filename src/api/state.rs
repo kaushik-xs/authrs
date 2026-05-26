@@ -8,6 +8,7 @@ use crate::middleware::tenant::TenantState;
 use crate::policy::schema::{build_schema_str, parse_schema};
 use crate::repo::{
     force_change_tokens::ForceChangeTokensRepo,
+    groups::GroupsRepo,
     kv_store::KvStoreRepo,
     otp::OtpRepo,
     packages::PackagesRepo,
@@ -55,6 +56,7 @@ impl AppState {
         };
         let users_repo = UsersRepo::new(pool.clone());
         let roles_repo = RolesRepo::new(pool.clone());
+        let groups_repo = GroupsRepo::new(pool.clone());
         let password_reset_tokens_repo = PasswordResetTokensRepo::new(pool.clone());
         let force_change_tokens_repo = ForceChangeTokensRepo::new(pool.clone());
         let sessions_repo = PostgresSessionStore::new(pool.clone());
@@ -66,6 +68,7 @@ impl AppState {
         let auth_service = AuthService::new(
             users_repo,
             roles_repo,
+            groups_repo,
             password_reset_tokens_repo,
             force_change_tokens_repo,
             tenant_config,

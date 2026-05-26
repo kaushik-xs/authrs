@@ -1,4 +1,4 @@
-//! RBAC: roles, permissions (roles assigned only to users).
+//! RBAC: roles, permissions, groups.
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -16,4 +16,14 @@ pub struct Permission {
     pub id: Uuid,
     pub tenant_id: String,
     pub name: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Group {
+    pub id: Uuid,
+    pub tenant_id: String,
+    pub name: String,
+    pub uid: String,
+    pub description: Option<String>,
 }

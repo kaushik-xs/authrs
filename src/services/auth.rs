@@ -3,7 +3,7 @@
 use crate::domain::session::SessionPayload;
 use crate::domain::user::{has_valid_identity, User};
 use crate::error::AppError;
-use crate::repo::{force_change_tokens::ForceChangeTokensRepo, password_reset_tokens::PasswordResetTokensRepo, roles::RolesRepo, users::UsersRepo};
+use crate::repo::{force_change_tokens::ForceChangeTokensRepo, groups::GroupsRepo, password_reset_tokens::PasswordResetTokensRepo, roles::RolesRepo, users::UsersRepo};
 use crate::services::session::SessionStore;
 use crate::services::tenant_config::{PasswordPolicy, TenantConfigLoader};
 use argon2::password_hash::SaltString;
@@ -14,6 +14,12 @@ use chrono::{Duration, Utc};
 use rand::RngCore;
 use std::sync::Arc;
 use uuid::Uuid;
+
+/// Chain two vecs and deduplicate, preserving the first-seen order.
+fn dedup_chain<T: Eq + std::hash::Hash + Clone>(a: Vec<T>, b: Vec<T>) -> Vec<T> {
+    let mut seen = std::collections::HashSet::new();
+    a.into_iter().chain(b).filter(|v| seen.insert(v.clone())).collect()
+}
 
 const LOGIN_METHOD_EMAIL_PASSWORD: i32 = 1;
 const LOGIN_METHOD_EMAIL_OTP: i32 = 2;
@@ -35,6 +41,7 @@ fn generate_session_token() -> String {
 pub struct AuthService {
     users_repo: UsersRepo,
     roles_repo: RolesRepo,
+    groups_repo: GroupsRepo,
     password_reset_tokens_repo: PasswordResetTokensRepo,
     force_change_tokens_repo: ForceChangeTokensRepo,
     tenant_config: TenantConfigLoader,
@@ -46,6 +53,7 @@ impl AuthService {
     pub fn new(
         users_repo: UsersRepo,
         roles_repo: RolesRepo,
+        groups_repo: GroupsRepo,
         password_reset_tokens_repo: PasswordResetTokensRepo,
         force_change_tokens_repo: ForceChangeTokensRepo,
         tenant_config: TenantConfigLoader,
@@ -55,6 +63,7 @@ impl AuthService {
         Self {
             users_repo,
             roles_repo,
+            groups_repo,
             password_reset_tokens_repo,
             force_change_tokens_repo,
             tenant_config,
@@ -63,12 +72,14 @@ impl AuthService {
         }
     }
 
-    /// For admin routes: assign/remove roles, list user roles (roles are assigned only to users).
     pub fn roles_repo(&self) -> &RolesRepo {
         &self.roles_repo
     }
 
-    /// For session/me and other routes that need to load user by id.
+    pub fn groups_repo(&self) -> &GroupsRepo {
+        &self.groups_repo
+    }
+
     pub fn users_repo(&self) -> &UsersRepo {
         &self.users_repo
     }
@@ -254,13 +265,20 @@ impl AuthService {
         ip: Option<&str>,
         user_agent: Option<&str>,
     ) -> Result<LoginResult, AppError> {
-        let roles      = self.roles_repo.get_user_roles(&tenant_id, user.id).await.unwrap_or_default();
-        let role_ids   = self.roles_repo.get_user_role_ids(&tenant_id, user.id).await.unwrap_or_default();
-        let permissions = self
-            .roles_repo
-            .get_user_permissions(tenant_id, user.id)
-            .await
-            .unwrap_or_default();
+        let direct_role_uids = self.roles_repo.get_user_roles(tenant_id, user.id).await.unwrap_or_default();
+        let direct_role_ids  = self.roles_repo.get_user_role_ids(tenant_id, user.id).await.unwrap_or_default();
+        let direct_perms     = self.roles_repo.get_user_permissions(tenant_id, user.id).await.unwrap_or_default();
+
+        let group_uids      = self.groups_repo.get_user_group_uids(tenant_id, user.id).await.unwrap_or_default();
+        let group_ids       = self.groups_repo.get_user_group_ids(tenant_id, user.id).await.unwrap_or_default();
+        let group_role_uids = self.groups_repo.get_user_group_role_uids(tenant_id, user.id).await.unwrap_or_default();
+        let group_role_ids  = self.groups_repo.get_user_group_role_ids(tenant_id, user.id).await.unwrap_or_default();
+        let group_perms     = self.groups_repo.get_user_group_permissions(tenant_id, user.id).await.unwrap_or_default();
+
+        let roles = dedup_chain(direct_role_uids, group_role_uids);
+        let role_ids = dedup_chain(direct_role_ids, group_role_ids);
+        let permissions = dedup_chain(direct_perms, group_perms);
+
         let session_policy = self.tenant_config.get_session_policy(tenant_id).await?;
         let ttl_secs = session_policy
             .and_then(|p| p.absolute_timeout_mins)
@@ -274,6 +292,8 @@ impl AuthService {
             roles,
             role_ids,
             permissions,
+            groups: group_uids,
+            group_ids,
             ip: ip.map(String::from),
             user_agent: user_agent.map(String::from),
             expires_at,
