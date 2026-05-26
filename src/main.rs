@@ -39,6 +39,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         redis_url,
         config.smtp_config(),
     )?;
+    state
+        .packages_service
+        .rebuild_schema()
+        .await
+        .expect("Failed to load Cedar schema from DB");
     let state = std::sync::Arc::new(state);
 
     let cors = CorsLayer::new()
