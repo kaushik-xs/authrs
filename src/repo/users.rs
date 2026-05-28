@@ -259,6 +259,40 @@ impl UsersRepo {
         Ok(())
     }
 
+    pub async fn exists_by_email(&self, tenant_id: &str, email: &str) -> Result<bool, AppError> {
+        let row: (bool,) = sqlx::query_as(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE tenant_id = $1 AND LOWER(email) = LOWER($2))",
+        )
+        .bind(tenant_id)
+        .bind(email)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row.0)
+    }
+
+    pub async fn exists_by_username(&self, tenant_id: &str, username: &str) -> Result<bool, AppError> {
+        let row: (bool,) = sqlx::query_as(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE tenant_id = $1 AND username = $2)",
+        )
+        .bind(tenant_id)
+        .bind(username)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row.0)
+    }
+
+    pub async fn exists_by_mobile(&self, tenant_id: &str, mobile: &str, country_code: &str) -> Result<bool, AppError> {
+        let row: (bool,) = sqlx::query_as(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE tenant_id = $1 AND mobile = $2 AND country_code = $3)",
+        )
+        .bind(tenant_id)
+        .bind(mobile)
+        .bind(country_code)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(row.0)
+    }
+
     /// Update user's password hash (for change-password and reset-password flows).
     pub async fn update_password(
         &self,

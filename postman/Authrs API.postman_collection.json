@@ -78,6 +78,14 @@
       "value": ""
     },
     {
+      "key": "mobile",
+      "value": ""
+    },
+    {
+      "key": "countryCode",
+      "value": ""
+    },
+    {
       "key": "provider",
       "value": "google"
     },
@@ -411,6 +419,84 @@
               "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"newPassword\": \"{{newPassword}}\",\n  \"retypePassword\": \"{{newPassword}}\"\n}"
             },
             "url": "{{baseUrl}}/reset-password"
+          }
+        },
+        {
+          "name": "Check email availability",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\"\n}"
+            },
+            "url": "{{baseUrl}}/check-availability/email",
+            "description": "Check whether an email address is available (not already registered) in the tenant. Returns { available: true|false }. Requires a valid session token."
+          }
+        },
+        {
+          "name": "Check username availability",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\"\n}"
+            },
+            "url": "{{baseUrl}}/check-availability/username",
+            "description": "Check whether a username is available (not already registered) in the tenant. Returns { available: true|false }. Requires a valid session token."
+          }
+        },
+        {
+          "name": "Check mobile availability",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mobile\": \"{{mobile}}\",\n  \"countryCode\": \"{{countryCode}}\"\n}"
+            },
+            "url": "{{baseUrl}}/check-availability/mobile",
+            "description": "Check whether a mobile number (with country code) is available in the tenant. Returns { available: true|false }. Requires a valid session token."
           }
         }
       ]

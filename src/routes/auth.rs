@@ -2,6 +2,7 @@
 
 use axum::{
     extract::State,
+    http::header::AUTHORIZATION,
     routing::post,
     Json, Router,
 };
@@ -16,6 +17,15 @@ use axum::http::StatusCode;
 use chrono::{Duration, Utc};
 use rand::Rng;
 use std::sync::Arc;
+
+fn bearer_token(headers: &axum::http::HeaderMap) -> Result<&str, AppError> {
+    let auth = headers
+        .get(AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| AppError::Unauthorized("Missing Authorization header".to_string()))?;
+    auth.strip_prefix("Bearer ")
+        .ok_or_else(|| AppError::Unauthorized("Invalid Authorization header".to_string()))
+}
 
 /// Signup at root path /signup
 pub fn signup_router() -> Router<Arc<AppState>> {
@@ -342,4 +352,112 @@ async fn oauth_redirect() -> &'static str {
 
 async fn oauth_callback() -> &'static str {
     "oauth callback placeholder"
+}
+
+pub fn availability_router() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/check-availability/email", post(check_email_availability))
+        .route("/check-availability/username", post(check_username_availability))
+        .route("/check-availability/mobile", post(check_mobile_availability))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CheckEmailBody {
+    email: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CheckUsernameBody {
+    username: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CheckMobileBody {
+    mobile: String,
+    country_code: String,
+}
+
+async fn check_email_availability(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<CheckEmailBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let token = bearer_token(&headers)?;
+    state
+        .session_store
+        .get(token)
+        .await?
+        .ok_or_else(|| AppError::Unauthorized("Invalid or expired session".to_string()))?;
+
+    let email = body.email.trim().to_lowercase();
+    if email.is_empty() {
+        return Err(AppError::BadRequest("email is required".to_string()));
+    }
+
+    let exists = state
+        .auth_service
+        .users_repo()
+        .exists_by_email(&tenant_id.0, &email)
+        .await?;
+    Ok(Json(serde_json::json!({ "available": !exists })))
+}
+
+async fn check_username_availability(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<CheckUsernameBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let token = bearer_token(&headers)?;
+    state
+        .session_store
+        .get(token)
+        .await?
+        .ok_or_else(|| AppError::Unauthorized("Invalid or expired session".to_string()))?;
+
+    let username = body.username.trim().to_string();
+    if username.is_empty() {
+        return Err(AppError::BadRequest("username is required".to_string()));
+    }
+
+    let exists = state
+        .auth_service
+        .users_repo()
+        .exists_by_username(&tenant_id.0, &username)
+        .await?;
+    Ok(Json(serde_json::json!({ "available": !exists })))
+}
+
+async fn check_mobile_availability(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<CheckMobileBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let token = bearer_token(&headers)?;
+    state
+        .session_store
+        .get(token)
+        .await?
+        .ok_or_else(|| AppError::Unauthorized("Invalid or expired session".to_string()))?;
+
+    let mobile = body.mobile.trim().to_string();
+    let country_code = body.country_code.trim().to_string();
+    if mobile.is_empty() {
+        return Err(AppError::BadRequest("mobile is required".to_string()));
+    }
+    if country_code.is_empty() {
+        return Err(AppError::BadRequest("countryCode is required".to_string()));
+    }
+
+    let exists = state
+        .auth_service
+        .users_repo()
+        .exists_by_mobile(&tenant_id.0, &mobile, &country_code)
+        .await?;
+    Ok(Json(serde_json::json!({ "available": !exists })))
 }

@@ -20,6 +20,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .merge(health::router())
         .merge(auth::signup_router())
         .merge(auth::password_router())
+        .merge(auth::availability_router())
         .nest("/login", auth::router())
         .nest("/oauth", auth::oauth_router())
         .nest("/mfa", mfa::router())
