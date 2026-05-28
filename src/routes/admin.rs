@@ -713,8 +713,10 @@ async fn admin_check_permission(
         })));
     }
 
-    // All-actions check: fetch relevant actions then evaluate each
-    let actions = state
+    // All-actions check: fetch relevant (action, specific_resource) pairs then evaluate each.
+    // Each action is evaluated against its own specific resource (e.g. table-level) rather than
+    // the caller-supplied scope, because compiled policies use `resource ==` at the table level.
+    let action_resources = state
         .packages_service
         .get_actions_for_resource(&resource)
         .await?;
@@ -722,12 +724,12 @@ async fn admin_check_permission(
     let mut decisions: HashMap<String, bool> = HashMap::new();
     {
         let schema = state.cedar_schema.read().unwrap();
-        for action in &actions {
+        for (action, action_resource) in &action_resources {
             let allowed = is_allowed(&AuthzRequest {
                 user_id: body.user_id,
                 role_names: &role_names,
                 action,
-                resource: &resource,
+                resource: action_resource,
                 context: context.clone(),
             }, &policy_set, &schema);
             decisions.insert(action.clone(), allowed);

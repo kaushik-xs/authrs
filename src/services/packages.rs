@@ -85,7 +85,11 @@ impl PackagesService {
         self.repo.list_tables().await
     }
 
-    /// Returns all action names relevant to the given resource path.
+    /// Returns `(action_name, specific_resource)` pairs relevant to the given resource path.
+    ///
+    /// `specific_resource` is the most precise resource path for that action so Cedar's
+    /// `resource ==` check in the compiled policy matches correctly. For CRUD actions this
+    /// is always the table-level path; for custom actions it is the package-level path.
     ///
     /// Scope is determined by the deepest segment in the path:
     /// - `service:x`                          → all actions across all packages
@@ -95,13 +99,20 @@ impl PackagesService {
     pub async fn get_actions_for_resource(
         &self,
         resource: &str,
-    ) -> Result<Vec<String>, AppError> {
+    ) -> Result<Vec<(String, String)>, AppError> {
         let (package_id, table_name) = parse_resource_scope(resource);
+
+        // Preserve the service prefix (e.g. "service:core") so we can build full resource paths.
+        let service_prefix = resource
+            .split('/')
+            .find(|s| s.starts_with("service:"))
+            .unwrap_or("")
+            .to_string();
 
         let all_tables = self.repo.list_tables().await?;
         let all_custom = self.repo.list_custom_actions().await?;
 
-        let mut actions: Vec<String> = Vec::new();
+        let mut actions: Vec<(String, String)> = Vec::new();
 
         // CRUD actions derived from matching tables
         for (pkg, tbl) in &all_tables {
@@ -115,25 +126,38 @@ impl PackagesService {
             };
             if include {
                 let pascal = crate::policy::schema::to_pascal_case(tbl);
+                // Policies are compiled with resource == <table-level path>; use that exact
+                // path so the Cedar equality check fires rather than comparing against a
+                // higher-level Package or Service entity.
+                let table_resource = if service_prefix.is_empty() {
+                    format!("package:{pkg}/table:{tbl}")
+                } else {
+                    format!("{service_prefix}/package:{pkg}/table:{tbl}")
+                };
                 for verb in &["get", "post", "patch", "put", "delete", "archive", "unarchive"] {
-                    actions.push(format!("{verb}{pascal}"));
+                    actions.push((format!("{verb}{pascal}"), table_resource.clone()));
                 }
             }
         }
 
-        // Custom actions scoped to matching packages
+        // Custom actions are stored at package scope.
         for (pkg, action) in &all_custom {
             let include = match &package_id {
                 Some(p) => pkg == p,
                 None => true,
             };
             if include {
-                actions.push(action.clone());
+                let pkg_resource = if service_prefix.is_empty() {
+                    format!("package:{pkg}")
+                } else {
+                    format!("{service_prefix}/package:{pkg}")
+                };
+                actions.push((action.clone(), pkg_resource));
             }
         }
 
-        actions.sort();
-        actions.dedup();
+        actions.sort_by(|a, b| a.0.cmp(&b.0));
+        actions.dedup_by(|a, b| a.0 == b.0);
         Ok(actions)
     }
 }
