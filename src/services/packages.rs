@@ -31,8 +31,8 @@ impl PackagesService {
     /// Sync a package: delete all existing package_id data, then reinsert tables and all actions
     /// (CRUD + custom) atomically, rebuild Cedar schema, and evict all PolicySet caches.
     ///
-    /// CRUD actions (get/post/patch/put/delete{Table}) are derived from the table list and stored
-    /// alongside any explicit custom actions so _auth_package_actions is a complete registry.
+    /// Standard actions (get/post/patch/put/delete/archive/unarchive{Table}) are derived from the
+    /// table list and stored alongside any explicit custom actions so _auth_package_actions is a complete registry.
     pub async fn sync(
         &self,
         package_id: &str,
@@ -44,7 +44,7 @@ impl PackagesService {
             .iter()
             .flat_map(|table| {
                 let pascal = crate::policy::schema::to_pascal_case(table);
-                ["get", "post", "patch", "put", "delete"]
+                ["get", "post", "patch", "put", "delete", "archive", "unarchive"]
                     .iter()
                     .map(move |verb| format!("{verb}{pascal}"))
             })
@@ -115,7 +115,7 @@ impl PackagesService {
             };
             if include {
                 let pascal = crate::policy::schema::to_pascal_case(tbl);
-                for verb in &["get", "post", "patch", "put", "delete"] {
+                for verb in &["get", "post", "patch", "put", "delete", "archive", "unarchive"] {
                     actions.push(format!("{verb}{pascal}"));
                 }
             }

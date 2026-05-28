@@ -32,7 +32,7 @@ pub fn build_schema_str(
     // Auto-generated CRUD actions for every registered table
     for (_, table_name) in package_tables {
         let pascal = to_pascal_case(table_name);
-        for verb in &["get", "post", "patch", "put", "delete"] {
+        for verb in &["get", "post", "patch", "put", "delete", "archive", "unarchive"] {
             action_lines.push(format!(
                 r#"  action "{verb}{pascal}" {applies_to};"#
             ));
