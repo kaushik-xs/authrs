@@ -324,7 +324,7 @@ impl GroupsRepo {
     ) -> Result<Vec<String>, AppError> {
         let rows = sqlx::query_as::<_, (String,)>(
             r#"
-            WITH direct_group_roles AS (
+            WITH RECURSIVE direct_group_roles AS (
                 SELECT DISTINCT r.id, r.uid
                 FROM roles r
                 INNER JOIN group_roles gr ON gr.role_id = r.id
@@ -359,7 +359,7 @@ impl GroupsRepo {
     ) -> Result<Vec<Uuid>, AppError> {
         let rows = sqlx::query_as::<_, (Uuid,)>(
             r#"
-            WITH direct_group_roles AS (
+            WITH RECURSIVE direct_group_roles AS (
                 SELECT DISTINCT r.id
                 FROM roles r
                 INNER JOIN group_roles gr ON gr.role_id = r.id
@@ -394,7 +394,7 @@ impl GroupsRepo {
     ) -> Result<Vec<String>, AppError> {
         let rows = sqlx::query_as::<_, (String,)>(
             r#"
-            WITH direct_group_roles AS (
+            WITH RECURSIVE direct_group_roles AS (
                 SELECT DISTINCT r.id
                 FROM roles r
                 INNER JOIN group_roles gr ON gr.role_id = r.id
