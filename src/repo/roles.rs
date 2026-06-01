@@ -23,16 +23,14 @@ impl RolesRepo {
         let rows = sqlx::query_as::<_, (String,)>(
             r#"
             WITH RECURSIVE role_ancestors AS (
-                SELECT r.id
+                SELECT r.id, r.parent_role_id
                 FROM roles r
                 INNER JOIN user_roles ur ON ur.role_id = r.id
                 WHERE ur.user_id = $1 AND r.tenant_id = $2
                 UNION
-                SELECT r.id
+                SELECT r.id, r.parent_role_id
                 FROM roles r
-                INNER JOIN role_ancestors ra ON r.id = (
-                    SELECT parent_role_id FROM roles WHERE id = ra.id
-                )
+                INNER JOIN role_ancestors ra ON r.id = ra.parent_role_id
                 WHERE r.tenant_id = $2
             )
             SELECT DISTINCT p.name
@@ -55,16 +53,14 @@ impl RolesRepo {
         let rows = sqlx::query_as::<_, (String,)>(
             r#"
             WITH RECURSIVE role_ancestors AS (
-                SELECT r.id, r.uid
+                SELECT r.id, r.uid, r.parent_role_id
                 FROM roles r
                 INNER JOIN user_roles ur ON ur.role_id = r.id
                 WHERE ur.user_id = $1 AND r.tenant_id = $2
                 UNION
-                SELECT r.id, r.uid
+                SELECT r.id, r.uid, r.parent_role_id
                 FROM roles r
-                INNER JOIN role_ancestors ra ON r.id = (
-                    SELECT parent_role_id FROM roles WHERE id = ra.id
-                )
+                INNER JOIN role_ancestors ra ON r.id = ra.parent_role_id
                 WHERE r.tenant_id = $2
             )
             SELECT DISTINCT uid FROM role_ancestors ORDER BY uid
@@ -266,16 +262,14 @@ impl RolesRepo {
         let rows = sqlx::query_as::<_, (Uuid,)>(
             r#"
             WITH RECURSIVE role_ancestors AS (
-                SELECT r.id
+                SELECT r.id, r.parent_role_id
                 FROM roles r
                 INNER JOIN user_roles ur ON ur.role_id = r.id
                 WHERE ur.user_id = $1 AND r.tenant_id = $2
                 UNION
-                SELECT r.id
+                SELECT r.id, r.parent_role_id
                 FROM roles r
-                INNER JOIN role_ancestors ra ON r.id = (
-                    SELECT parent_role_id FROM roles WHERE id = ra.id
-                )
+                INNER JOIN role_ancestors ra ON r.id = ra.parent_role_id
                 WHERE r.tenant_id = $2
             )
             SELECT DISTINCT id FROM role_ancestors

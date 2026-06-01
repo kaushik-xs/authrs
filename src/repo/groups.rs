@@ -325,20 +325,18 @@ impl GroupsRepo {
         let rows = sqlx::query_as::<_, (String,)>(
             r#"
             WITH RECURSIVE direct_group_roles AS (
-                SELECT DISTINCT r.id, r.uid
+                SELECT DISTINCT r.id, r.uid, r.parent_role_id
                 FROM roles r
                 INNER JOIN group_roles gr ON gr.role_id = r.id
                 INNER JOIN user_groups ug ON ug.group_id = gr.group_id
                 WHERE ug.user_id = $1 AND r.tenant_id = $2
             ),
             role_ancestors AS (
-                SELECT id, uid FROM direct_group_roles
+                SELECT id, uid, parent_role_id FROM direct_group_roles
                 UNION
-                SELECT r.id, r.uid
+                SELECT r.id, r.uid, r.parent_role_id
                 FROM roles r
-                INNER JOIN role_ancestors ra ON r.id = (
-                    SELECT parent_role_id FROM roles WHERE id = ra.id
-                )
+                INNER JOIN role_ancestors ra ON r.id = ra.parent_role_id
                 WHERE r.tenant_id = $2
             )
             SELECT DISTINCT uid FROM role_ancestors ORDER BY uid
@@ -360,20 +358,18 @@ impl GroupsRepo {
         let rows = sqlx::query_as::<_, (Uuid,)>(
             r#"
             WITH RECURSIVE direct_group_roles AS (
-                SELECT DISTINCT r.id
+                SELECT DISTINCT r.id, r.parent_role_id
                 FROM roles r
                 INNER JOIN group_roles gr ON gr.role_id = r.id
                 INNER JOIN user_groups ug ON ug.group_id = gr.group_id
                 WHERE ug.user_id = $1 AND r.tenant_id = $2
             ),
             role_ancestors AS (
-                SELECT id FROM direct_group_roles
+                SELECT id, parent_role_id FROM direct_group_roles
                 UNION
-                SELECT r.id
+                SELECT r.id, r.parent_role_id
                 FROM roles r
-                INNER JOIN role_ancestors ra ON r.id = (
-                    SELECT parent_role_id FROM roles WHERE id = ra.id
-                )
+                INNER JOIN role_ancestors ra ON r.id = ra.parent_role_id
                 WHERE r.tenant_id = $2
             )
             SELECT DISTINCT id FROM role_ancestors
@@ -395,20 +391,18 @@ impl GroupsRepo {
         let rows = sqlx::query_as::<_, (String,)>(
             r#"
             WITH RECURSIVE direct_group_roles AS (
-                SELECT DISTINCT r.id
+                SELECT DISTINCT r.id, r.parent_role_id
                 FROM roles r
                 INNER JOIN group_roles gr ON gr.role_id = r.id
                 INNER JOIN user_groups ug ON ug.group_id = gr.group_id
                 WHERE ug.user_id = $1 AND r.tenant_id = $2
             ),
             role_ancestors AS (
-                SELECT id FROM direct_group_roles
+                SELECT id, parent_role_id FROM direct_group_roles
                 UNION
-                SELECT r.id
+                SELECT r.id, r.parent_role_id
                 FROM roles r
-                INNER JOIN role_ancestors ra ON r.id = (
-                    SELECT parent_role_id FROM roles WHERE id = ra.id
-                )
+                INNER JOIN role_ancestors ra ON r.id = ra.parent_role_id
                 WHERE r.tenant_id = $2
             )
             SELECT DISTINCT p.name
