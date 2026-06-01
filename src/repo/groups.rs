@@ -316,7 +316,7 @@ impl GroupsRepo {
 
     // ── Effective role/permission queries (used when building sessions) ────────
 
-    /// Role UIDs a user inherits through their group memberships.
+    /// Role UIDs a user inherits through their group memberships (including ancestor roles).
     pub async fn get_user_group_role_uids(
         &self,
         tenant_id: &str,
@@ -324,12 +324,24 @@ impl GroupsRepo {
     ) -> Result<Vec<String>, AppError> {
         let rows = sqlx::query_as::<_, (String,)>(
             r#"
-            SELECT DISTINCT r.uid
-            FROM roles r
-            INNER JOIN group_roles gr ON gr.role_id = r.id
-            INNER JOIN user_groups ug ON ug.group_id = gr.group_id
-            WHERE ug.user_id = $1 AND r.tenant_id = $2
-            ORDER BY r.uid
+            WITH direct_group_roles AS (
+                SELECT DISTINCT r.id, r.uid
+                FROM roles r
+                INNER JOIN group_roles gr ON gr.role_id = r.id
+                INNER JOIN user_groups ug ON ug.group_id = gr.group_id
+                WHERE ug.user_id = $1 AND r.tenant_id = $2
+            ),
+            role_ancestors AS (
+                SELECT id, uid FROM direct_group_roles
+                UNION
+                SELECT r.id, r.uid
+                FROM roles r
+                INNER JOIN role_ancestors ra ON r.id = (
+                    SELECT parent_role_id FROM roles WHERE id = ra.id
+                )
+                WHERE r.tenant_id = $2
+            )
+            SELECT DISTINCT uid FROM role_ancestors ORDER BY uid
             "#,
         )
         .bind(user_id)
@@ -339,7 +351,7 @@ impl GroupsRepo {
         Ok(rows.into_iter().map(|(uid,)| uid).collect())
     }
 
-    /// Role primary-key UUIDs a user inherits through their groups — for policy set loading.
+    /// Role primary-key UUIDs a user inherits through their groups (including ancestor roles) — for policy set loading.
     pub async fn get_user_group_role_ids(
         &self,
         tenant_id: &str,
@@ -347,11 +359,24 @@ impl GroupsRepo {
     ) -> Result<Vec<Uuid>, AppError> {
         let rows = sqlx::query_as::<_, (Uuid,)>(
             r#"
-            SELECT DISTINCT r.id
-            FROM roles r
-            INNER JOIN group_roles gr ON gr.role_id = r.id
-            INNER JOIN user_groups ug ON ug.group_id = gr.group_id
-            WHERE ug.user_id = $1 AND r.tenant_id = $2
+            WITH direct_group_roles AS (
+                SELECT DISTINCT r.id
+                FROM roles r
+                INNER JOIN group_roles gr ON gr.role_id = r.id
+                INNER JOIN user_groups ug ON ug.group_id = gr.group_id
+                WHERE ug.user_id = $1 AND r.tenant_id = $2
+            ),
+            role_ancestors AS (
+                SELECT id FROM direct_group_roles
+                UNION
+                SELECT r.id
+                FROM roles r
+                INNER JOIN role_ancestors ra ON r.id = (
+                    SELECT parent_role_id FROM roles WHERE id = ra.id
+                )
+                WHERE r.tenant_id = $2
+            )
+            SELECT DISTINCT id FROM role_ancestors
             "#,
         )
         .bind(user_id)
@@ -361,7 +386,7 @@ impl GroupsRepo {
         Ok(rows.into_iter().map(|(id,)| id).collect())
     }
 
-    /// Permission names a user inherits through their groups.
+    /// Permission names a user inherits through their groups (including ancestor role permissions).
     pub async fn get_user_group_permissions(
         &self,
         tenant_id: &str,
@@ -369,12 +394,28 @@ impl GroupsRepo {
     ) -> Result<Vec<String>, AppError> {
         let rows = sqlx::query_as::<_, (String,)>(
             r#"
+            WITH direct_group_roles AS (
+                SELECT DISTINCT r.id
+                FROM roles r
+                INNER JOIN group_roles gr ON gr.role_id = r.id
+                INNER JOIN user_groups ug ON ug.group_id = gr.group_id
+                WHERE ug.user_id = $1 AND r.tenant_id = $2
+            ),
+            role_ancestors AS (
+                SELECT id FROM direct_group_roles
+                UNION
+                SELECT r.id
+                FROM roles r
+                INNER JOIN role_ancestors ra ON r.id = (
+                    SELECT parent_role_id FROM roles WHERE id = ra.id
+                )
+                WHERE r.tenant_id = $2
+            )
             SELECT DISTINCT p.name
             FROM permissions p
             INNER JOIN role_permissions rp ON rp.permission_id = p.id
-            INNER JOIN group_roles gr ON gr.role_id = rp.role_id
-            INNER JOIN user_groups ug ON ug.group_id = gr.group_id
-            WHERE ug.user_id = $1 AND p.tenant_id = $2
+            INNER JOIN role_ancestors ra ON ra.id = rp.role_id
+            WHERE p.tenant_id = $2
             "#,
         )
         .bind(user_id)

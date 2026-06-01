@@ -9,7 +9,7 @@ use crate::policy::schema::to_pascal_case;
 
 pub struct AuthzRequest<'a> {
     pub user_id: Uuid,
-    /// Role names taken directly from the session — no DB lookup needed.
+    /// Role uids taken from the session (direct + ancestors already expanded).
     pub role_names: &'a [String],
     /// Derived action name e.g. "patchMaterials" or a custom action
     pub action: &'a str,

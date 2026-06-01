@@ -44,6 +44,8 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/users/:user_id/access-validity", patch(admin_set_access_validity))
         .route("/roles", post(admin_create_role))
         .route("/roles", get(admin_list_roles))
+        .route("/roles/:role_id/parent", put(admin_set_role_parent))
+        .route("/roles/:role_id/hierarchy", get(admin_get_role_hierarchy))
         .route("/roles/:role_id/permissions", post(admin_attach_permission_to_role))
         .route("/roles/:role_id/permissions", get(admin_list_role_permissions))
         .route("/roles/:role_id/permissions/:permission_id", delete(admin_detach_permission_from_role))
@@ -99,6 +101,14 @@ struct AdminCreateUserBody {
 #[serde(rename_all = "camelCase")]
 struct AdminCreateRoleBody {
     name: String,
+    #[serde(default)]
+    parent_role_id: Option<Uuid>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminSetRoleParentBody {
+    parent_role_id: Option<Uuid>,
 }
 
 async fn admin_list_user_roles(
@@ -255,13 +265,14 @@ async fn admin_create_role(
     let (id, name, uid) = state
         .auth_service
         .roles_repo()
-        .create(&tenant_id.0, &body.name)
+        .create(&tenant_id.0, &body.name, body.parent_role_id)
         .await?;
     Ok((
         axum::http::StatusCode::CREATED,
-        Json(serde_json::json!({ "id": id, "name": name, "uid": uid })),
+        Json(serde_json::json!({ "id": id, "name": name, "uid": uid, "parentRoleId": body.parent_role_id })),
     ))
 }
+
 async fn admin_list_roles(
     State(state): State<Arc<AppState>>,
     tenant_id: TenantId,
@@ -273,9 +284,42 @@ async fn admin_list_roles(
         .await?;
     let roles_json: Vec<serde_json::Value> = roles
         .into_iter()
-        .map(|(id, name, uid)| serde_json::json!({ "id": id, "name": name, "uid": uid }))
+        .map(|(id, name, uid, parent_role_id)| {
+            serde_json::json!({ "id": id, "name": name, "uid": uid, "parentRoleId": parent_role_id })
+        })
         .collect();
     Ok(Json(serde_json::json!({ "roles": roles_json })))
+}
+
+async fn admin_set_role_parent(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Path(role_id): Path<Uuid>,
+    Json(body): Json<AdminSetRoleParentBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    state
+        .auth_service
+        .roles_repo()
+        .set_parent(&tenant_id.0, role_id, body.parent_role_id)
+        .await?;
+    Ok(Json(serde_json::json!({ "message": "Role parent updated." })))
+}
+
+async fn admin_get_role_hierarchy(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Path(role_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let ancestors = state
+        .auth_service
+        .roles_repo()
+        .get_role_ancestors(&tenant_id.0, role_id)
+        .await?;
+    let ancestors_json: Vec<serde_json::Value> = ancestors
+        .into_iter()
+        .map(|(id, name, uid)| serde_json::json!({ "id": id, "name": name, "uid": uid }))
+        .collect();
+    Ok(Json(serde_json::json!({ "ancestors": ancestors_json })))
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

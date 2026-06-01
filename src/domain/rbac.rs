@@ -8,6 +8,8 @@ pub struct Role {
     pub id: Uuid,
     pub tenant_id: String,
     pub name: String,
+    pub uid: String,
+    pub parent_role_id: Option<Uuid>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
