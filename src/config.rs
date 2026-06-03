@@ -19,6 +19,9 @@ pub struct Config {
     pub smtp_user: Option<String>,
     pub smtp_pass: Option<String>,
     pub smtp_from: Option<String>,
+    /// Global fallback base URL for building links (e.g. password reset). Per-tenant
+    /// config takes precedence; this is used when a tenant has no base_url set.
+    pub frontend_url: Option<String>,
 }
 
 /// SMTP settings derived from Config for use in AppState (avoids holding full Config).
@@ -78,6 +81,7 @@ impl Config {
         let smtp_user = env::var("SMTP_USER").ok().filter(|s| !s.is_empty());
         let smtp_pass = env::var("SMTP_PASS").ok().filter(|s| !s.is_empty());
         let smtp_from = env::var("SMTP_FROM").ok().filter(|s| !s.is_empty());
+        let frontend_url = env::var("FRONTEND_URL").ok().filter(|s| !s.is_empty());
 
         Ok(Self {
             database_url,
@@ -93,6 +97,7 @@ impl Config {
             smtp_user,
             smtp_pass,
             smtp_from,
+            frontend_url,
         })
     }
 

@@ -45,19 +45,28 @@ pub async fn send_otp_email(
     Ok(())
 }
 
-/// Send password reset email with the token. Caller should include reset link or token for the user.
+/// Send password reset email. When `reset_link` is `Some`, the email contains a
+/// clickable link; otherwise it falls back to sending the raw `token` (for callers
+/// with no configured base URL).
 pub async fn send_password_reset_email(
     smtp: &SmtpConfig,
     to_email: &str,
     token: &str,
+    reset_link: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let from_addr = smtp.from.parse()?;
     let to_addr = to_email.parse()?;
 
-    let body = format!(
-        "You requested a password reset. Use the following token to set a new password:\n\n{}\n\nThis token expires in 1 hour. If you did not request this, please ignore this email.",
-        token
-    );
+    let body = match reset_link {
+        Some(link) => format!(
+            "You requested a password reset. Click the link below to set a new password:\n\n{}\n\nThis link expires in 1 hour. If you did not request this, please ignore this email.",
+            link
+        ),
+        None => format!(
+            "You requested a password reset. Use the following token to set a new password:\n\n{}\n\nThis token expires in 1 hour. If you did not request this, please ignore this email.",
+            token
+        ),
+    };
 
     let message = Message::builder()
         .from(from_addr)

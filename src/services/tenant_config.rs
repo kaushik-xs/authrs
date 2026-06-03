@@ -84,6 +84,13 @@ impl TenantConfigLoader {
         Ok(v.and_then(|j| serde_json::from_value(j).ok()))
     }
 
+    /// Per-tenant frontend base URL used to build links (e.g. password reset).
+    /// Stored as a plain JSON string under group "frontend_config", key "base_url".
+    pub async fn get_frontend_base_url(&self, tenant_id: &str) -> Result<Option<String>, crate::error::AppError> {
+        let v = self.get(tenant_id, "frontend_config", "base_url").await?;
+        Ok(v.and_then(|j| j.as_str().map(|s| s.to_string())).filter(|s| !s.is_empty()))
+    }
+
     /// Invalidate cache for a tenant (e.g. after admin updates kv_store).
     pub fn invalidate_tenant(&self, tenant_id: &str) {
         let prefix = format!("{}:", tenant_id);

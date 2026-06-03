@@ -311,7 +311,25 @@ async fn forgot_password(
         .await?;
     if let Some((to_email, token)) = result {
         if let Some(ref smtp) = state.smtp_config {
-            if let Err(e) = email::send_password_reset_email(smtp, &to_email, &token).await {
+            // Resolve the reset-link base URL: per-tenant config first, then global env fallback.
+            let base_url = state
+                .tenant_state
+                .tenant_config
+                .get_frontend_base_url(&tenant_id.0)
+                .await?
+                .or_else(|| state.frontend_url.clone());
+            let reset_link = base_url.map(|base| {
+                format!("{}/reset-password?token={}", base.trim_end_matches('/'), token)
+            });
+            if reset_link.is_none() {
+                tracing::warn!(
+                    "No frontend base URL configured for tenant {}; sending raw reset token instead of a link",
+                    tenant_id.0
+                );
+            }
+            if let Err(e) =
+                email::send_password_reset_email(smtp, &to_email, &token, reset_link.as_deref()).await
+            {
                 tracing::warn!("Failed to send password reset email to {}: {}", to_email, e);
             }
         }

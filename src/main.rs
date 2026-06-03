@@ -38,6 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         config.kv_store_encryption_key.clone(),
         redis_url,
         config.smtp_config(),
+        config.frontend_url.clone(),
     )?;
     state
         .packages_service

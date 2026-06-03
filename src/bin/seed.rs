@@ -5,7 +5,8 @@
 //!   cargo run --bin seed
 //!
 //! Required env: DATABASE_URL (e.g. from .env). To actually seed, set SEED_TENANT_ID.
-//! Optional: SEED_TENANT_NAME, SEED_ROLE_NAME, SEED_ADMIN_EMAIL, SEED_ADMIN_PASSWORD, etc.
+//! Optional: SEED_TENANT_NAME, SEED_ROLE_NAME, SEED_ADMIN_EMAIL, SEED_ADMIN_PASSWORD,
+//! SEED_APP_URL (tenant frontend base URL for password-reset links), etc.
 //!
 //! Example:
 //!   SEED_TENANT_ID=test SEED_TENANT_NAME=Test SEED_ADMIN_EMAIL=admin@example.com SEED_ADMIN_PASSWORD=secret cargo run --bin seed

@@ -23,6 +23,9 @@ pub struct SeedInput {
     pub admin_first_name: Option<String>,
     /// Optional: admin last name.
     pub admin_last_name: Option<String>,
+    /// Optional: tenant frontend base URL used to build links (e.g. password reset).
+    /// Stored in kv_store under group "frontend_config", key "base_url".
+    pub app_url: Option<String>,
 }
 
 impl SeedInput {
@@ -39,6 +42,10 @@ impl SeedInput {
         let admin_password = std::env::var("SEED_ADMIN_PASSWORD").ok().filter(|s| !s.is_empty());
         let admin_first_name = std::env::var("SEED_ADMIN_FIRST_NAME").ok().filter(|s| !s.is_empty());
         let admin_last_name = std::env::var("SEED_ADMIN_LAST_NAME").ok().filter(|s| !s.is_empty());
+        let app_url = std::env::var("SEED_APP_URL")
+            .ok()
+            .map(|s| s.trim().trim_end_matches('/').to_string())
+            .filter(|s| !s.is_empty());
 
         if admin_email.is_some() && admin_password.as_ref().map_or(true, |p| p.is_empty()) {
             return Err("SEED_ADMIN_PASSWORD is required when SEED_ADMIN_EMAIL is set".to_string());
@@ -52,6 +59,7 @@ impl SeedInput {
             admin_password,
             admin_first_name,
             admin_last_name,
+            app_url,
         }))
     }
 }
@@ -90,6 +98,28 @@ pub async fn run(pool: &PgPool, input: &SeedInput) -> Result<(), String> {
             "already exists"
         }
     );
+
+    // 1b. Optional tenant frontend base URL -> kv_store (frontend_config.base_url).
+    // Stored as a JSON string (e.g. "https://app.example.com"), sensitive = false,
+    // matching TenantConfigLoader::get_frontend_base_url.
+    if let Some(app_url) = &input.app_url {
+        let value_json = serde_json::to_string(app_url).map_err(|e| e.to_string())?;
+        sqlx::query(
+            r#"
+            INSERT INTO kv_store (tenant_id, group_key, key, value, sensitive, updated_at)
+            VALUES ($1, 'frontend_config', 'base_url', $2, false, now())
+            ON CONFLICT (tenant_id, group_key, key)
+            DO UPDATE SET value = EXCLUDED.value, sensitive = false, updated_at = now()
+            "#,
+        )
+        .bind(&input.tenant_id)
+        .bind(&value_json)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        tracing::info!("Tenant {} app URL set to {}", input.tenant_id, app_url);
+    }
 
     // 2. Seeded role (SEED_ROLE_NAME) — uid is the stable snake_case slug, write-once
     let role_uid = crate::repo::roles::to_uid(&input.role_name);
