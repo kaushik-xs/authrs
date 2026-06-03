@@ -12,7 +12,13 @@ use crate::api::state::AppState;
 use crate::error::AppError;
 
 const BUILDER_TENANT_ID: &str = "builder";
-const ALLOWED_ROLES: [&str; 2] = ["builder_developer_admin", "builder_developer"];
+const ALLOWED_ROLES: [&str; 5] = [
+    "builder_developer_admin",
+    "builder_implementor_admin",
+    "developer",
+    "implementor",
+    "architect",
+];
 
 fn bearer_token(headers: &axum::http::HeaderMap) -> Result<&str, AppError> {
     let auth = headers
@@ -50,7 +56,7 @@ async fn list_tenants(
         .any(|r| ALLOWED_ROLES.contains(&r.as_str()));
     if !has_role {
         return Err(AppError::Forbidden(
-            "Requires Builder Developer Admin or Builder Developer role".to_string(),
+            "Requires a Builder role (Builder Developer Admin, Builder Implementor Admin, Developer, Implementor, or Architect)".to_string(),
         ));
     }
 
