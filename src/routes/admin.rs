@@ -44,6 +44,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/users/:user_id/access-validity", patch(admin_set_access_validity))
         .route("/roles", post(admin_create_role))
         .route("/roles", get(admin_list_roles))
+        .route("/roles/:role_id", delete(admin_delete_role))
         .route("/roles/:role_id/parent", put(admin_set_role_parent))
         .route("/roles/:role_id/hierarchy", get(admin_get_role_hierarchy))
         .route("/roles/:role_id/permissions", post(admin_attach_permission_to_role))
@@ -303,6 +304,25 @@ async fn admin_set_role_parent(
         .set_parent(&tenant_id.0, role_id, body.parent_role_id)
         .await?;
     Ok(Json(serde_json::json!({ "message": "Role parent updated." })))
+}
+
+async fn admin_delete_role(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Path(role_id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let deleted = state
+        .auth_service
+        .roles_repo()
+        .delete(&tenant_id.0, role_id)
+        .await?;
+    if !deleted {
+        return Err(AppError::NotFound("Role not found".to_string()));
+    }
+    // Deleting a role removes its role_permissions links and changes permission
+    // resolution for affected principals — drop any cached permission state.
+    state.permissions_service.evict(&tenant_id.0);
+    Ok(Json(serde_json::json!({ "message": "Role deleted" })))
 }
 
 async fn admin_get_role_hierarchy(

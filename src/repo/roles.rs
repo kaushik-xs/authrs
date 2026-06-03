@@ -210,6 +210,22 @@ impl RolesRepo {
         Ok(())
     }
 
+    /// Delete a role. Returns true if deleted.
+    ///
+    /// Cascades: `role_permissions`, `user_roles`, and `group_roles` rows referencing
+    /// this role are removed via `ON DELETE CASCADE`; any child roles have their
+    /// `parent_role_id` set to NULL via `ON DELETE SET NULL`.
+    pub async fn delete(&self, tenant_id: &str, role_id: Uuid) -> Result<bool, AppError> {
+        let r = sqlx::query(
+            "DELETE FROM roles WHERE tenant_id = $1 AND id = $2",
+        )
+        .bind(tenant_id)
+        .bind(role_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(r.rows_affected() > 0)
+    }
+
     /// Returns the full ancestor chain for a role (excluding the role itself), root-first.
     pub async fn get_role_ancestors(
         &self,
