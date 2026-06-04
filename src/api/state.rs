@@ -38,6 +38,10 @@ pub struct AppState {
     /// Global fallback base URL for building links (e.g. password reset). Per-tenant
     /// config takes precedence; None disables link-building (falls back to raw token).
     pub frontend_url: Option<String>,
+    /// Tenant ID whose users may access platform (builder) routes.
+    pub builder_tenant_id: String,
+    /// Roles permitted to access platform (builder) routes.
+    pub allowed_roles: Vec<String>,
     pub permissions_service: PermissionsService,
     pub packages_service: PackagesService,
     pub cedar_schema: Arc<RwLock<Schema>>,
@@ -50,6 +54,8 @@ impl AppState {
         redis_url: Option<String>,
         smtp_config: Option<SmtpConfig>,
         frontend_url: Option<String>,
+        builder_tenant_id: String,
+        allowed_roles: Vec<String>,
     ) -> Result<Self, crate::error::AppError> {
         let kv_store = KvStoreRepo::new(pool.clone(), kv_encryption_key)?;
         let tenant_config = TenantConfigLoader::new(kv_store);
@@ -103,6 +109,8 @@ impl AppState {
             otp_repo,
             smtp_config,
             frontend_url,
+            builder_tenant_id,
+            allowed_roles,
             permissions_service,
             packages_service,
             cedar_schema,

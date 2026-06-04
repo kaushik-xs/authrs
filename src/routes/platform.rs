@@ -11,15 +11,6 @@ use std::sync::Arc;
 use crate::api::state::AppState;
 use crate::error::AppError;
 
-const BUILDER_TENANT_ID: &str = "builder";
-const ALLOWED_ROLES: [&str; 5] = [
-    "builder_developer_admin",
-    "builder_implementor_admin",
-    "developer",
-    "implementor",
-    "architect",
-];
-
 fn bearer_token(headers: &axum::http::HeaderMap) -> Result<&str, AppError> {
     let auth = headers
         .get(AUTHORIZATION)
@@ -44,7 +35,7 @@ async fn list_tenants(
         .await?
         .ok_or_else(|| AppError::Unauthorized("Invalid or expired session".to_string()))?;
 
-    if payload.tenant_id != BUILDER_TENANT_ID {
+    if payload.tenant_id != state.builder_tenant_id {
         return Err(AppError::Forbidden(
             "Access restricted to builder tenant".to_string(),
         ));
@@ -53,11 +44,12 @@ async fn list_tenants(
     let has_role = payload
         .roles
         .iter()
-        .any(|r| ALLOWED_ROLES.contains(&r.as_str()));
+        .any(|r| state.allowed_roles.contains(r));
     if !has_role {
-        return Err(AppError::Forbidden(
-            "Requires a Builder role (Builder Developer Admin, Builder Implementor Admin, Developer, Implementor, or Architect)".to_string(),
-        ));
+        return Err(AppError::Forbidden(format!(
+            "Requires one of the following Builder roles: {}",
+            state.allowed_roles.join(", ")
+        )));
     }
 
     let tenants = state.tenant_state.tenants_repo.list_all().await?;

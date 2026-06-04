@@ -39,6 +39,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         redis_url,
         config.smtp_config(),
         config.frontend_url.clone(),
+        config.builder_tenant_id.clone(),
+        config.allowed_roles.clone(),
     )?;
     state
         .packages_service

@@ -22,6 +22,10 @@ pub struct Config {
     /// Global fallback base URL for building links (e.g. password reset). Per-tenant
     /// config takes precedence; this is used when a tenant has no base_url set.
     pub frontend_url: Option<String>,
+    /// Tenant ID whose users may access platform (builder) routes. Required.
+    pub builder_tenant_id: String,
+    /// Roles permitted to access platform (builder) routes. Required, comma-separated.
+    pub allowed_roles: Vec<String>,
 }
 
 /// SMTP settings derived from Config for use in AppState (avoids holding full Config).
@@ -83,6 +87,18 @@ impl Config {
         let smtp_from = env::var("SMTP_FROM").ok().filter(|s| !s.is_empty());
         let frontend_url = env::var("FRONTEND_URL").ok().filter(|s| !s.is_empty());
 
+        // Platform (builder) access control — required, no defaults.
+        let builder_tenant_id = env::var("BUILDER_TENANT_ID")?;
+        let allowed_roles: Vec<String> = env::var("ALLOWED_ROLES")?
+            .split(',')
+            .map(|r| r.trim().to_string())
+            .filter(|r| !r.is_empty())
+            .collect();
+        if allowed_roles.is_empty() {
+            // Present but empty would lock everyone out of platform routes; treat as unset.
+            return Err(env::VarError::NotPresent);
+        }
+
         Ok(Self {
             database_url,
             redis_url,
@@ -98,6 +114,8 @@ impl Config {
             smtp_pass,
             smtp_from,
             frontend_url,
+            builder_tenant_id,
+            allowed_roles,
         })
     }
 
