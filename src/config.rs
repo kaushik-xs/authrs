@@ -26,6 +26,9 @@ pub struct Config {
     pub builder_tenant_id: String,
     /// Roles permitted to access platform (builder) routes. Required, comma-separated.
     pub allowed_roles: Vec<String>,
+    /// Global fallback session TTL in seconds. Used when a tenant has no
+    /// `session_policy.absoluteTimeoutMins` set. Defaults to 3600 (1 hour).
+    pub default_session_ttl_secs: u64,
 }
 
 /// SMTP settings derived from Config for use in AppState (avoids holding full Config).
@@ -73,6 +76,13 @@ impl Config {
             .unwrap_or(3000);
         let kv_store_encryption_key = env::var("KV_STORE_ENCRYPTION_KEY").ok();
 
+        // Global fallback session TTL. Invalid or zero values fall back to the 1-hour default.
+        let default_session_ttl_secs = env::var("DEFAULT_SESSION_TTL_SECS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(3600);
+
         let smtp_host = env::var("SMTP_HOST").ok().filter(|s| !s.is_empty());
         let smtp_port = env::var("SMTP_PORT")
             .ok()
@@ -116,6 +126,7 @@ impl Config {
             frontend_url,
             builder_tenant_id,
             allowed_roles,
+            default_session_ttl_secs,
         })
     }
 

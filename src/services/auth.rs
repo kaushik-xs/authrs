@@ -26,6 +26,8 @@ const LOGIN_METHOD_EMAIL_OTP: i32 = 2;
 const LOGIN_METHOD_USERNAME_PASSWORD: i32 = 4;
 const DEFAULT_LOCK_AFTER_ATTEMPTS: i32 = 5;
 const DEFAULT_LOCK_DURATION_MINS: i64 = 15;
+/// Hard-coded fallback used only if no TTL is injected. The effective default is
+/// supplied via config (env `DEFAULT_SESSION_TTL_SECS`) into `AuthService`.
 const DEFAULT_SESSION_TTL_SECS: u64 = 3600; // 1 hour
 const PASSWORD_RESET_TOKEN_TTL_MINS: i64 = 60;
 const FORCE_CHANGE_TOKEN_TTL_MINS: i64 = 15;
@@ -47,6 +49,9 @@ pub struct AuthService {
     tenant_config: TenantConfigLoader,
     session_store: Arc<dyn SessionStore>,
     sessions_repo: crate::repo::sessions::PostgresSessionStore,
+    /// Global fallback session TTL (seconds), used when a tenant has no
+    /// `session_policy.absoluteTimeoutMins`. Sourced from `DEFAULT_SESSION_TTL_SECS` env.
+    default_session_ttl_secs: u64,
 }
 
 impl AuthService {
@@ -59,6 +64,7 @@ impl AuthService {
         tenant_config: TenantConfigLoader,
         session_store: Arc<dyn SessionStore>,
         sessions_repo: crate::repo::sessions::PostgresSessionStore,
+        default_session_ttl_secs: u64,
     ) -> Self {
         Self {
             users_repo,
@@ -69,6 +75,11 @@ impl AuthService {
             tenant_config,
             session_store,
             sessions_repo,
+            default_session_ttl_secs: if default_session_ttl_secs > 0 {
+                default_session_ttl_secs
+            } else {
+                DEFAULT_SESSION_TTL_SECS
+            },
         }
     }
 
@@ -305,7 +316,7 @@ impl AuthService {
         let ttl_secs = session_policy
             .and_then(|p| p.absolute_timeout_mins)
             .map(|m| m * 60)
-            .unwrap_or(DEFAULT_SESSION_TTL_SECS);
+            .unwrap_or(self.default_session_ttl_secs);
         let expires_at = Utc::now() + chrono::Duration::seconds(ttl_secs as i64);
         let session_token = generate_session_token();
         let payload = SessionPayload {

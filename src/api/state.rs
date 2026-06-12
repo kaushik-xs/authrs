@@ -56,6 +56,7 @@ impl AppState {
         frontend_url: Option<String>,
         builder_tenant_id: String,
         allowed_roles: Vec<String>,
+        default_session_ttl_secs: u64,
     ) -> Result<Self, crate::error::AppError> {
         let kv_store = KvStoreRepo::new(pool.clone(), kv_encryption_key)?;
         let tenant_config = TenantConfigLoader::new(kv_store);
@@ -84,6 +85,7 @@ impl AppState {
             tenant_config,
             session_store.clone(),
             sessions_repo.clone(),
+            default_session_ttl_secs,
         );
         let otp_repo = OtpRepo::new(pool.clone());
 
