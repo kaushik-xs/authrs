@@ -206,6 +206,7 @@ async fn email_otp_request(
     if email.is_empty() {
         return Err(AppError::BadRequest("email is required".to_string()));
     }
+    state.auth_service.ensure_email_domain_allowed(&tenant_id.0, &email).await?;
 
     let code: String = (0..6).map(|_| rand::thread_rng().gen_range(0..10).to_string()).collect();
     let expires_at = Utc::now() + Duration::minutes(10);

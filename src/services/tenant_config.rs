@@ -84,6 +84,14 @@ impl TenantConfigLoader {
         Ok(v.and_then(|j| serde_json::from_value(j).ok()))
     }
 
+    /// Per-tenant allowlist of email domains permitted for signup/login. Stored as a
+    /// JSON array of strings under group "email_policy", key "allowed_domains".
+    /// `None` or an empty list means all domains are permitted.
+    pub async fn get_allowed_email_domains(&self, tenant_id: &str) -> Result<Option<Vec<String>>, crate::error::AppError> {
+        let v = self.get(tenant_id, "email_policy", "allowed_domains").await?;
+        Ok(v.and_then(|j| serde_json::from_value(j).ok()))
+    }
+
     /// Per-tenant frontend base URL used to build links (e.g. password reset).
     /// Stored as a plain JSON string under group "frontend_config", key "base_url".
     pub async fn get_frontend_base_url(&self, tenant_id: &str) -> Result<Option<String>, crate::error::AppError> {

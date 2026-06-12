@@ -121,6 +121,27 @@ impl AuthService {
         Ok(effective)
     }
 
+    /// Enforce the tenant's email-domain allowlist (kv_store group "email_policy",
+    /// key "allowed_domains" -> JSON array of domains). No allowlist, or an empty
+    /// one, permits all domains. Matching is case-insensitive on the part after `@`.
+    pub async fn ensure_email_domain_allowed(&self, tenant_id: &str, email: &str) -> Result<(), AppError> {
+        let allowed = match self.tenant_config.get_allowed_email_domains(tenant_id).await? {
+            Some(list) if !list.is_empty() => list,
+            _ => return Ok(()),
+        };
+        let domain = match email.trim().rsplit_once('@') {
+            Some((_, d)) if !d.is_empty() => d.to_lowercase(),
+            _ => return Err(AppError::Forbidden("Email domain is not permitted".to_string())),
+        };
+        let permitted = allowed
+            .iter()
+            .any(|d| d.trim().trim_start_matches('@').to_lowercase() == domain);
+        if !permitted {
+            return Err(AppError::Forbidden("Email domain is not permitted".to_string()));
+        }
+        Ok(())
+    }
+
     fn verify_password(&self, hash: &str, password: &str) -> Result<bool, AppError> {
         let parsed = PasswordHash::new(hash).map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(Argon2::default()
@@ -169,6 +190,7 @@ impl AuthService {
         ip: Option<&str>,
         user_agent: Option<&str>,
     ) -> Result<LoginResult, AppError> {
+        self.ensure_email_domain_allowed(tenant_id, email).await?;
         let user = self
             .users_repo
             .get_by_email(tenant_id, email)
@@ -383,6 +405,7 @@ impl AuthService {
         if email.is_empty() {
             return Err(AppError::BadRequest("Email is required".to_string()));
         }
+        self.ensure_email_domain_allowed(tenant_id, email).await?;
         if password != retype_password {
             return Err(AppError::BadRequest("Password and retype password do not match".to_string()));
         }
