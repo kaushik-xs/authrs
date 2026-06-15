@@ -152,37 +152,63 @@ pub async fn run(pool: &PgPool, input: &SeedInput) -> Result<(), String> {
         let last_name = input.admin_last_name.as_deref().unwrap_or("User").to_string();
         let now = chrono::Utc::now();
 
+        // Find or create the GLOBAL identity (email is unique across all tenants). Seeding
+        // the same admin email into multiple tenants reuses one identity (shared login).
+        let identity_id: Uuid = match sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM identities WHERE lower(email) = lower($1)",
+        )
+        .bind(&email)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?
+        {
+            Some(id) => {
+                tracing::info!("Identity {} already exists", email);
+                id
+            }
+            None => sqlx::query_scalar::<_, Uuid>(
+                r#"INSERT INTO identities (email, first_name, last_name, password_hash)
+                   VALUES ($1, $2, $3, $4) RETURNING id"#,
+            )
+            .bind(&email)
+            .bind(&first_name)
+            .bind(&last_name)
+            .bind(&password_hash)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?,
+        };
+
+        // Create the per-tenant membership for that identity (idempotent). Display fields and
+        // credentials live on the identity; the membership row holds only the link + status.
         let user_id = Uuid::new_v4();
         let inserted_user = sqlx::query(
             r#"
-            INSERT INTO users (id, tenant_id, first_name, last_name, email, username, mobile, country_code, password_hash, status, mfa_enabled, failed_attempts, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, NULL, NULL, NULL, $6, 'active', false, 0, $7, $7)
-            ON CONFLICT (tenant_id, email) DO NOTHING
+            INSERT INTO users (id, tenant_id, identity_id, status, created_at, updated_at)
+            VALUES ($1, $2, $3, 'active', $4, $4)
+            ON CONFLICT (tenant_id, identity_id) DO NOTHING
             "#,
         )
         .bind(user_id)
         .bind(&input.tenant_id)
-        .bind(&first_name)
-        .bind(&last_name)
-        .bind(&email)
-        .bind(&password_hash)
+        .bind(identity_id)
         .bind(now)
         .execute(pool)
         .await
         .map_err(|e| e.to_string())?;
 
         if inserted_user.rows_affected() > 0 {
-            tracing::info!("Admin user {} created for tenant {}", email, input.tenant_id);
+            tracing::info!("Admin membership for {} created in tenant {}", email, input.tenant_id);
         } else {
-            tracing::info!("Admin user {} already exists for tenant {}", email, input.tenant_id);
+            tracing::info!("Admin membership for {} already exists in tenant {}", email, input.tenant_id);
         }
 
-        // Resolve user id (new or existing) and add to Launchpad Admins group
+        // Resolve membership id (new or existing) for role assignment.
         let existing_user_id: Option<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM users WHERE tenant_id = $1 AND email = $2",
+            "SELECT id FROM users WHERE tenant_id = $1 AND identity_id = $2",
         )
         .bind(&input.tenant_id)
-        .bind(&email)
+        .bind(identity_id)
         .fetch_optional(pool)
         .await
         .map_err(|e| e.to_string())?;

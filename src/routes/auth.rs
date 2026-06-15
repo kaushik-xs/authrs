@@ -3,7 +3,7 @@
 use axum::{
     extract::State,
     http::header::AUTHORIZATION,
-    routing::post,
+    routing::{get, post},
     Json, Router,
 };
 use serde::Deserialize;
@@ -12,7 +12,7 @@ use crate::api::state::AppState;
 use crate::api::tenant::TenantId;
 use crate::email;
 use crate::error::AppError;
-use crate::services::auth::LoginResult;
+use crate::services::auth::{LoginResult, SignupOutcome};
 use axum::http::StatusCode;
 use chrono::{Duration, Utc};
 use rand::Rng;
@@ -29,7 +29,9 @@ fn bearer_token(headers: &axum::http::HeaderMap) -> Result<&str, AppError> {
 
 /// Signup at root path /signup
 pub fn signup_router() -> Router<Arc<AppState>> {
-    Router::new().route("/signup", post(signup))
+    Router::new()
+        .route("/signup", post(signup))
+        .route("/signup/verify", post(verify_membership))
 }
 
 /// Forgot password and reset password (no auth required).
@@ -47,6 +49,32 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/mobile-otp/request", post(mobile_otp_request))
         .route("/mobile-whatsapp-otp/request", post(mobile_whatsapp_otp_request))
         .route("/otp/verify", post(otp_verify))
+        // SSO: tenant-less identity login + tenant selection (no X-Tenant-ID).
+        .route("/identity", post(login_identity))
+        .route("/select-tenant", post(select_tenant))
+}
+
+/// SSO identity endpoints mounted at root (e.g. GET /identity/tenants).
+pub fn identity_router() -> Router<Arc<AppState>> {
+    Router::new().route("/identity/tenants", get(identity_tenants))
+}
+
+/// Render a `LoginResult` to the standard login JSON shape.
+fn login_result_json(result: LoginResult) -> Json<serde_json::Value> {
+    match result {
+        LoginResult::Success { session_token, expires_at } => Json(serde_json::json!({
+            "sessionToken": session_token,
+            "expiresAt": expires_at.to_rfc3339()
+        })),
+        LoginResult::MfaRequired { mfa_token, .. } => Json(serde_json::json!({
+            "mfaRequired": true,
+            "mfaToken": mfa_token
+        })),
+        LoginResult::PasswordChangeRequired { change_token } => Json(serde_json::json!({
+            "passwordChangeRequired": true,
+            "changeToken": change_token
+        })),
+    }
 }
 
 pub fn oauth_router() -> Router<Arc<AppState>> {
@@ -116,7 +144,7 @@ async fn signup(
     tenant_id: TenantId,
     Json(body): Json<SignupBody>,
 ) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), AppError> {
-    let user = state
+    let outcome = state
         .auth_service
         .signup(
             &tenant_id.0,
@@ -129,15 +157,69 @@ async fn signup(
             &body.retype_password,
         )
         .await?;
+    match outcome {
+        SignupOutcome::Created(user) => Ok((
+            axum::http::StatusCode::CREATED,
+            Json(serde_json::json!({
+                "id": user.id,
+                "firstName": user.first_name,
+                "lastName": user.last_name,
+                "email": user.email,
+                "mobile": user.mobile,
+                "countryCode": user.country_code,
+                "status": user.status,
+            })),
+        )),
+        SignupOutcome::VerificationSent { email: to_email, token } => {
+            // The email already belongs to a global identity: email the owner a verify link
+            // to join this tenant. Response is intentionally generic (no enumeration).
+            if let Some(ref smtp) = state.smtp_config {
+                let base_url = state
+                    .tenant_state
+                    .tenant_config
+                    .get_frontend_base_url(&tenant_id.0)
+                    .await?
+                    .or_else(|| state.frontend_url.clone());
+                let link = base_url.map(|base| {
+                    format!("{}/verify-membership?token={}", base.trim_end_matches('/'), token)
+                });
+                if let Err(e) =
+                    email::send_membership_invite_email(smtp, &to_email, &token, link.as_deref()).await
+                {
+                    tracing::warn!("Failed to send membership invite email to {}: {}", to_email, e);
+                }
+            }
+            Ok((
+                axum::http::StatusCode::ACCEPTED,
+                Json(serde_json::json!({
+                    "message": "Registration received. If further steps are required, we've emailed you instructions."
+                })),
+            ))
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VerifyMembershipBody {
+    token: String,
+}
+
+/// Accept a membership invite from the verify-to-join email (no X-Tenant-ID; the tenant is
+/// encoded in the token). Creates the membership for the existing identity.
+async fn verify_membership(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<VerifyMembershipBody>,
+) -> Result<(axum::http::StatusCode, Json<serde_json::Value>), AppError> {
+    let user = state
+        .auth_service
+        .verify_membership_invite(&body.token)
+        .await?;
     Ok((
         axum::http::StatusCode::CREATED,
         Json(serde_json::json!({
             "id": user.id,
-            "firstName": user.first_name,
-            "lastName": user.last_name,
-            "email": user.email,
-            "mobile": user.mobile,
-            "countryCode": user.country_code,
+            "tenantId": user.tenant_id,
             "status": user.status,
         })),
     ))
@@ -301,6 +383,62 @@ async fn otp_verify(
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentityLoginBody {
+    email: String,
+    password: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SelectTenantBody {
+    tenant_id: String,
+}
+
+/// Tenant-less SSO login by email. Returns a short-lived identity token plus the tenants
+/// this identity belongs to. No X-Tenant-ID required.
+async fn login_identity(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<IdentityLoginBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let (identity_token, tenants) = state
+        .auth_service
+        .login_identity(&body.email, &body.password)
+        .await?;
+    Ok(Json(serde_json::json!({
+        "identityToken": identity_token,
+        "tenants": tenants,
+    })))
+}
+
+/// List the tenants for an identity token (the SSO tenant picker). Bearer = identity token.
+async fn identity_tenants(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let identity_token = bearer_token(&headers)?;
+    let tenants = state
+        .auth_service
+        .tenants_for_identity_token(identity_token)
+        .await?;
+    Ok(Json(serde_json::json!({ "tenants": tenants })))
+}
+
+/// Exchange an identity token (Bearer) for a tenant-scoped session.
+async fn select_tenant(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<SelectTenantBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let identity_token = bearer_token(&headers)?;
+    let result = state
+        .auth_service
+        .select_tenant_with_token(identity_token, &body.tenant_id, None, None)
+        .await?;
+    Ok(login_result_json(result))
+}
+
 async fn forgot_password(
     State(state): State<Arc<AppState>>,
     tenant_id: TenantId,
@@ -417,10 +555,12 @@ async fn check_email_availability(
         return Err(AppError::BadRequest("email is required".to_string()));
     }
 
+    // Email is a GLOBAL identity handle, so availability is checked across all tenants.
+    let _ = &tenant_id;
     let exists = state
         .auth_service
-        .users_repo()
-        .exists_by_email(&tenant_id.0, &email)
+        .identities_repo()
+        .exists_by_email(&email)
         .await?;
     Ok(Json(serde_json::json!({ "available": !exists })))
 }
@@ -473,10 +613,12 @@ async fn check_mobile_availability(
         return Err(AppError::BadRequest("countryCode is required".to_string()));
     }
 
+    // Mobile is a GLOBAL identity handle, so availability is checked across all tenants.
+    let _ = &tenant_id;
     let exists = state
         .auth_service
-        .users_repo()
-        .exists_by_mobile(&tenant_id.0, &mobile, &country_code)
+        .identities_repo()
+        .exists_by_mobile(&country_code, &mobile)
         .await?;
     Ok(Json(serde_json::json!({ "available": !exists })))
 }

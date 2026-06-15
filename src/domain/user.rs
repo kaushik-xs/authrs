@@ -3,25 +3,25 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// A per-tenant membership of a global identity. Display fields (name, email, mobile) and
+/// `mfa_enabled` are sourced from the joined `identities` row; credentials and lockout live
+/// solely on the identity and are not represented here.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct User {
     pub id: Uuid,
     #[serde(skip_serializing)]
     pub tenant_id: String,
+    /// The global identity this membership belongs to.
+    pub identity_id: Uuid,
     pub first_name: Option<String>,
     pub last_name: Option<String>,
     pub email: Option<String>,
     pub username: Option<String>,
     pub mobile: Option<String>,
     pub country_code: Option<String>,
-    #[serde(skip_serializing)]
-    pub password_hash: Option<String>,
     pub status: String,
     pub mfa_enabled: bool,
-    pub force_password_change: bool,
-    pub failed_attempts: i32,
-    pub locked_until: Option<chrono::DateTime<chrono::Utc>>,
     pub access_valid_until: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,

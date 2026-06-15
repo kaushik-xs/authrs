@@ -1,4 +1,7 @@
 pub mod users;
+pub mod identities;
+pub mod identity_tokens;
+pub mod membership_invites;
 pub mod password_reset_tokens;
 pub mod force_change_tokens;
 pub mod tenants;

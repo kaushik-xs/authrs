@@ -1,9 +1,10 @@
 //! Auth service: login (email/username password), lock policy, effective login methods.
 
+use crate::domain::identity::Identity;
 use crate::domain::session::SessionPayload;
 use crate::domain::user::{has_valid_identity, User};
 use crate::error::AppError;
-use crate::repo::{force_change_tokens::ForceChangeTokensRepo, groups::GroupsRepo, password_reset_tokens::PasswordResetTokensRepo, roles::RolesRepo, users::UsersRepo};
+use crate::repo::{force_change_tokens::ForceChangeTokensRepo, groups::GroupsRepo, identities::IdentitiesRepo, identity_tokens::IdentityTokensRepo, membership_invites::MembershipInvitesRepo, password_reset_tokens::PasswordResetTokensRepo, roles::RolesRepo, users::UsersRepo};
 use crate::services::session::SessionStore;
 use crate::services::tenant_config::{PasswordPolicy, TenantConfigLoader};
 use argon2::password_hash::SaltString;
@@ -31,6 +32,8 @@ const DEFAULT_LOCK_DURATION_MINS: i64 = 15;
 const DEFAULT_SESSION_TTL_SECS: u64 = 3600; // 1 hour
 const PASSWORD_RESET_TOKEN_TTL_MINS: i64 = 60;
 const FORCE_CHANGE_TOKEN_TTL_MINS: i64 = 15;
+/// Identity token (tenant-less SSO login → tenant selection) lifetime.
+const IDENTITY_TOKEN_TTL_MINS: i64 = 10;
 
 /// Generates a 256-bit (32-byte) random session token, base64url-encoded (no padding).
 fn generate_session_token() -> String {
@@ -42,6 +45,9 @@ fn generate_session_token() -> String {
 #[derive(Clone)]
 pub struct AuthService {
     users_repo: UsersRepo,
+    identities_repo: IdentitiesRepo,
+    identity_tokens_repo: IdentityTokensRepo,
+    membership_invites_repo: MembershipInvitesRepo,
     roles_repo: RolesRepo,
     groups_repo: GroupsRepo,
     password_reset_tokens_repo: PasswordResetTokensRepo,
@@ -57,6 +63,9 @@ pub struct AuthService {
 impl AuthService {
     pub fn new(
         users_repo: UsersRepo,
+        identities_repo: IdentitiesRepo,
+        identity_tokens_repo: IdentityTokensRepo,
+        membership_invites_repo: MembershipInvitesRepo,
         roles_repo: RolesRepo,
         groups_repo: GroupsRepo,
         password_reset_tokens_repo: PasswordResetTokensRepo,
@@ -68,6 +77,9 @@ impl AuthService {
     ) -> Self {
         Self {
             users_repo,
+            identities_repo,
+            identity_tokens_repo,
+            membership_invites_repo,
             roles_repo,
             groups_repo,
             password_reset_tokens_repo,
@@ -93,6 +105,10 @@ impl AuthService {
 
     pub fn users_repo(&self) -> &UsersRepo {
         &self.users_repo
+    }
+
+    pub fn identities_repo(&self) -> &IdentitiesRepo {
+        &self.identities_repo
     }
 
     /// Effective login methods = intersection of tenant allowed, group allowed, user supported.
@@ -228,19 +244,21 @@ impl AuthService {
             .await
     }
 
-    async fn do_password_login(
-        &self,
-        tenant_id: &str,
-        user: &User,
-        password: &str,
-        ip: Option<&str>,
-        user_agent: Option<&str>,
-        method: i32,
-    ) -> Result<LoginResult, AppError> {
-        if user.status != "active" {
+    /// Load the global identity behind a membership.
+    async fn load_identity(&self, identity_id: Uuid) -> Result<Identity, AppError> {
+        self.identities_repo
+            .get_by_id(identity_id)
+            .await?
+            .ok_or_else(|| AppError::Internal("Identity not found for membership".to_string()))
+    }
+
+    /// Gates common to every login: per-tenant membership status/access (layered) plus the
+    /// global identity status and lockout.
+    fn check_gates(user: &User, identity: &Identity) -> Result<(), AppError> {
+        if user.status != "active" || identity.status != "active" {
             return Err(AppError::Forbidden("Account is not active".to_string()));
         }
-        if let Some(locked_until) = user.locked_until {
+        if let Some(locked_until) = identity.locked_until {
             if locked_until > Utc::now() {
                 return Err(AppError::Locked("Account is temporarily locked".to_string()));
             }
@@ -250,44 +268,70 @@ impl AuthService {
                 return Err(AppError::AccessExpired("Account access has expired".to_string()));
             }
         }
-        let effective = self.effective_login_methods(tenant_id, user.id, user).await?;
-        if !effective.contains(&method) {
-            return Err(AppError::Forbidden("This login method is not allowed for your account".to_string()));
-        }
-        let password_hash = user
-            .password_hash
-            .as_ref()
-            .ok_or_else(|| AppError::Unauthorized("Invalid credentials".to_string()))?;
-        if !self.verify_password(password_hash, password)? {
-            let policy = self.tenant_config.get_password_policy(tenant_id).await?;
-            let lock_after = policy
-                .and_then(|p| p.max_age_days)
-                .map(|_| DEFAULT_LOCK_AFTER_ATTEMPTS)
-                .unwrap_or(DEFAULT_LOCK_AFTER_ATTEMPTS);
-            let lock_until = if user.failed_attempts + 1 >= lock_after {
-                Some(Utc::now() + Duration::minutes(DEFAULT_LOCK_DURATION_MINS))
-            } else {
-                None
-            };
-            self.users_repo
-                .increment_failed_attempts(tenant_id, user.id, lock_until)
-                .await?;
-            return Err(AppError::Unauthorized("Invalid email or password".to_string()));
-        }
-        self.users_repo.clear_failed_attempts(tenant_id, user.id).await?;
+        Ok(())
+    }
 
-        if user.force_password_change {
+    /// Shared tail once the credential is verified and gates pass: force-change → MFA →
+    /// session. Force-change and MFA are global (read off the identity).
+    async fn finalize_login(
+        &self,
+        tenant_id: &str,
+        user: &User,
+        identity: &Identity,
+        ip: Option<&str>,
+        user_agent: Option<&str>,
+    ) -> Result<LoginResult, AppError> {
+        if identity.force_password_change {
             return self.issue_force_change_token(tenant_id, user.id).await;
         }
-
-        if user.mfa_enabled {
+        if identity.mfa_enabled {
             return Ok(LoginResult::MfaRequired {
                 mfa_token: Uuid::new_v4().to_string(),
                 user_id: user.id,
             });
         }
-
         self.do_create_session(tenant_id, user, ip, user_agent).await
+    }
+
+    async fn do_password_login(
+        &self,
+        tenant_id: &str,
+        user: &User,
+        password: &str,
+        ip: Option<&str>,
+        user_agent: Option<&str>,
+        method: i32,
+    ) -> Result<LoginResult, AppError> {
+        let identity = self.load_identity(user.identity_id).await?;
+        Self::check_gates(user, &identity)?;
+        let effective = self.effective_login_methods(tenant_id, user.id, user).await?;
+        if !effective.contains(&method) {
+            return Err(AppError::Forbidden("This login method is not allowed for your account".to_string()));
+        }
+        // Credential lives on the identity (shared across tenants).
+        let password_hash = identity
+            .password_hash
+            .as_ref()
+            .ok_or_else(|| AppError::Unauthorized("Invalid credentials".to_string()))?;
+        if !self.verify_password(password_hash, password)? {
+            self.register_failed_attempt(&identity).await?;
+            return Err(AppError::Unauthorized("Invalid email or password".to_string()));
+        }
+        self.identities_repo.clear_failed_attempts(identity.id).await?;
+        self.finalize_login(tenant_id, user, &identity, ip, user_agent).await
+    }
+
+    /// Global lockout: failed attempts accrue against the shared credential, so they cannot
+    /// be spread across tenants to bypass the lock.
+    async fn register_failed_attempt(&self, identity: &Identity) -> Result<(), AppError> {
+        let lock_until = if identity.failed_attempts + 1 >= DEFAULT_LOCK_AFTER_ATTEMPTS {
+            Some(Utc::now() + Duration::minutes(DEFAULT_LOCK_DURATION_MINS))
+        } else {
+            None
+        };
+        self.identities_repo
+            .increment_failed_attempts(identity.id, lock_until)
+            .await
     }
 
     /// Create a session for a user (after password or OTP verified). Caller must have checked status, lock, and login method.
@@ -322,6 +366,7 @@ impl AuthService {
         let payload = SessionPayload {
             tenant_id: tenant_id.to_string(),
             user_id: user.id,
+            identity_id: user.identity_id,
             roles,
             role_ids,
             permissions,
@@ -366,37 +411,13 @@ impl AuthService {
             .get_by_email_insensitive(tenant_id, email)
             .await?
             .ok_or_else(|| AppError::Unauthorized("Invalid or expired code".to_string()))?;
-
-        if user.status != "active" {
-            return Err(AppError::Forbidden("Account is not active".to_string()));
-        }
-        if let Some(locked_until) = user.locked_until {
-            if locked_until > Utc::now() {
-                return Err(AppError::Locked("Account is temporarily locked".to_string()));
-            }
-        }
-        if let Some(valid_until) = user.access_valid_until {
-            if Utc::now() > valid_until {
-                return Err(AppError::AccessExpired("Account access has expired".to_string()));
-            }
-        }
+        let identity = self.load_identity(user.identity_id).await?;
+        Self::check_gates(&user, &identity)?;
         let effective = self.effective_login_methods(tenant_id, user.id, &user).await?;
         if !effective.contains(&LOGIN_METHOD_EMAIL_OTP) {
             return Err(AppError::Forbidden("Email OTP login is not allowed for your account".to_string()));
         }
-
-        if user.force_password_change {
-            return self.issue_force_change_token(tenant_id, user.id).await;
-        }
-
-        if user.mfa_enabled {
-            return Ok(LoginResult::MfaRequired {
-                mfa_token: Uuid::new_v4().to_string(),
-                user_id: user.id,
-            });
-        }
-
-        self.do_create_session(tenant_id, &user, ip, user_agent).await
+        self.finalize_login(tenant_id, &user, &identity, ip, user_agent).await
     }
 
     /// Sign up a new user with email (required), optional mobile, and password.
@@ -411,7 +432,7 @@ impl AuthService {
         country_code: Option<&str>,
         password: &str,
         retype_password: &str,
-    ) -> Result<User, AppError> {
+    ) -> Result<SignupOutcome, AppError> {
         let email = email.trim();
         if email.is_empty() {
             return Err(AppError::BadRequest("Email is required".to_string()));
@@ -422,9 +443,6 @@ impl AuthService {
         }
         let policy = self.tenant_config.get_password_policy(tenant_id).await?;
         Self::validate_password_policy(password, policy.as_ref())?;
-        if self.users_repo.get_by_email(tenant_id, email).await?.is_some() {
-            return Err(AppError::Conflict("An account with this email already exists".to_string()));
-        }
         if let (Some(m), Some(c)) = (mobile, country_code) {
             if !m.trim().is_empty() && c.trim().is_empty() {
                 return Err(AppError::BadRequest(
@@ -432,48 +450,99 @@ impl AuthService {
                 ));
             }
         }
+        let mobile = mobile.map(|s| s.trim()).filter(|s| !s.is_empty());
+        let country_code = country_code.map(|s| s.trim()).filter(|s| !s.is_empty());
+        let first = Some(first_name.trim()).filter(|s| !s.is_empty());
+        let last = Some(last_name.trim()).filter(|s| !s.is_empty());
+
+        // Already a member of THIS tenant with that email?
+        if self.users_repo.get_by_email(tenant_id, email).await?.is_some() {
+            return Err(AppError::Conflict("An account with this email already exists".to_string()));
+        }
+
+        // Public signup colliding with an EXISTING global identity: do not silently attach.
+        // Email the real owner a verify-to-join link; the caller never learns the account
+        // exists (returns the same VerificationSent outcome).
+        let existing = match self.identities_repo.get_by_email(email).await? {
+            Some(i) => Some(i),
+            None => match (mobile, country_code) {
+                (Some(m), Some(c)) => self.identities_repo.get_by_mobile(c, m).await?,
+                _ => None,
+            },
+        };
+        if let Some(identity) = existing {
+            let token = generate_session_token();
+            let expires_at = Utc::now() + Duration::minutes(PASSWORD_RESET_TOKEN_TTL_MINS);
+            self.membership_invites_repo
+                .create(identity.id, tenant_id, first, last, None, &token, expires_at)
+                .await?;
+            let to_email = identity.email.clone().unwrap_or_else(|| email.to_string());
+            return Ok(SignupOutcome::VerificationSent { email: to_email, token });
+        }
+
+        // No collision: create the identity + membership.
         let password_hash = self.hash_password(password)?;
+        let identity = self
+            .identities_repo
+            .create(Some(email), mobile, country_code, first, last, Some(&password_hash))
+            .await?;
+        let user = self.users_repo.create(&identity, tenant_id, None).await?;
+        Ok(SignupOutcome::Created(user))
+    }
+
+    /// Accept a membership invite (verify-to-join). Creates the membership in the invited
+    /// tenant for the already-existing identity. No X-Tenant-ID — the tenant is in the token.
+    pub async fn verify_membership_invite(&self, token: &str) -> Result<User, AppError> {
+        let invite = self
+            .membership_invites_repo
+            .get_valid(token)
+            .await?
+            .ok_or_else(|| AppError::BadRequest("Invalid or expired invite token".to_string()))?;
+        // Idempotent: if the membership already exists, just consume the token.
+        if let Some(user) = self
+            .users_repo
+            .get_membership(invite.identity_id, &invite.tenant_id)
+            .await?
+        {
+            self.membership_invites_repo.delete_by_token(token).await?;
+            return Ok(user);
+        }
+        let identity = self.load_identity(invite.identity_id).await?;
         let user = self
             .users_repo
-            .create(
-                tenant_id,
-                Some(first_name.trim()).filter(|s| !s.is_empty()),
-                Some(last_name.trim()).filter(|s| !s.is_empty()),
-                Some(email),
-                None,
-                mobile.map(|s| s.trim()).filter(|s| !s.is_empty()),
-                country_code.map(|s| s.trim()).filter(|s| !s.is_empty()),
-                Some(&password_hash),
-            )
+            .create(&identity, &invite.tenant_id, invite.username.as_deref())
             .await?;
+        self.membership_invites_repo.delete_by_token(token).await?;
         Ok(user)
     }
 
     /// Forgot password: create a reset token. Returns Some((email, token)) when user exists so caller can send email; None to avoid email enumeration.
+    /// Forgot password resolves the GLOBAL identity by email (reset affects the one shared
+    /// credential). `_tenant_id` is retained for the route signature but not used to scope.
     pub async fn forgot_password(
         &self,
-        tenant_id: &str,
+        _tenant_id: &str,
         email: &str,
     ) -> Result<Option<(String, String)>, AppError> {
         let email = email.trim().to_lowercase();
         if email.is_empty() {
             return Err(AppError::BadRequest("Email is required".to_string()));
         }
-        let user = match self.users_repo.get_by_email_insensitive(tenant_id, &email).await? {
-            Some(u) => u,
+        let identity = match self.identities_repo.get_by_email(&email).await? {
+            Some(i) => i,
             None => return Ok(None),
         };
-        let to_email = match &user.email {
+        let to_email = match &identity.email {
             Some(e) => e.clone(),
             None => return Ok(None),
         };
         self.password_reset_tokens_repo
-            .delete_for_user(tenant_id, user.id)
+            .delete_for_identity(identity.id)
             .await?;
         let token = generate_session_token();
         let expires_at = Utc::now() + Duration::minutes(PASSWORD_RESET_TOKEN_TTL_MINS);
         self.password_reset_tokens_repo
-            .create(tenant_id, user.id, &token, expires_at)
+            .create(identity.id, &token, expires_at)
             .await?;
         Ok(Some((to_email, token)))
     }
@@ -493,20 +562,16 @@ impl AuthService {
         if new_password != retype_password {
             return Err(AppError::BadRequest("Password and retype password do not match".to_string()));
         }
+        // Password policy applies for the tenant the reset was requested under (X-Tenant-ID).
         let policy = self.tenant_config.get_password_policy(tenant_id).await?;
         Self::validate_password_policy(new_password, policy.as_ref())?;
-        let (stored_tenant_id, user_id) = self
+        let identity_id = self
             .password_reset_tokens_repo
             .get_valid(token)
             .await?
             .ok_or_else(|| AppError::BadRequest("Invalid or expired reset token".to_string()))?;
-        if stored_tenant_id != tenant_id {
-            return Err(AppError::BadRequest("Invalid or expired reset token".to_string()));
-        }
         let password_hash = self.hash_password(new_password)?;
-        self.users_repo
-            .update_password(tenant_id, user_id, &password_hash)
-            .await?;
+        self.identities_repo.update_password(identity_id, &password_hash).await?;
         self.password_reset_tokens_repo.delete_by_token(token).await?;
         Ok(())
     }
@@ -530,7 +595,8 @@ impl AuthService {
             .get_by_id(tenant_id, user_id)
             .await?
             .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
-        let password_hash = user
+        let identity = self.load_identity(user.identity_id).await?;
+        let password_hash = identity
             .password_hash
             .as_ref()
             .ok_or_else(|| AppError::BadRequest("Account has no password set".to_string()))?;
@@ -538,9 +604,7 @@ impl AuthService {
             return Err(AppError::Unauthorized("Current password is incorrect".to_string()));
         }
         let new_hash = self.hash_password(new_password)?;
-        self.users_repo
-            .update_password(tenant_id, user_id, &new_hash)
-            .await?;
+        self.identities_repo.update_password(identity.id, &new_hash).await?;
         Ok(())
     }
 
@@ -558,18 +622,39 @@ impl AuthService {
         }
         let policy = self.tenant_config.get_password_policy(tenant_id).await?;
         Self::validate_password_policy(new_password, policy.as_ref())?;
-        let _user = self
+        // NOTE: this now sets the GLOBAL credential (all tenants). Phase 5e will restrict
+        // admin reset to force-change-only so a tenant admin cannot set another tenant's
+        // usable password.
+        let user = self
             .users_repo
             .get_by_id(tenant_id, user_id)
             .await?
             .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
-        let password_hash = self.hash_password(new_password)?;
-        self.users_repo
-            .update_password(tenant_id, user_id, &password_hash)
-            .await?;
-        self.users_repo
-            .set_force_password_change(tenant_id, user_id, force_password_change)
-            .await?;
+        // The credential is shared across every tenant this identity belongs to. A tenant
+        // admin may set a usable password only when the identity is single-tenant (no
+        // cross-tenant blast radius). For a multi-tenant identity, only force-change is
+        // allowed — the user must reset the password themselves.
+        let membership_count = self
+            .users_repo
+            .get_memberships_for_identity(user.identity_id)
+            .await?
+            .len();
+        if membership_count > 1 {
+            if !force_password_change {
+                return Err(AppError::Forbidden(
+                    "This account belongs to multiple tenants; you cannot set its shared password. Pass forcePasswordChange=true to require the user to reset it themselves.".to_string(),
+                ));
+            }
+            self.identities_repo
+                .set_force_password_change(user.identity_id, true)
+                .await?;
+        } else {
+            let password_hash = self.hash_password(new_password)?;
+            self.identities_repo.update_password(user.identity_id, &password_hash).await?;
+            self.identities_repo
+                .set_force_password_change(user.identity_id, force_password_change)
+                .await?;
+        }
         Ok(())
     }
 
@@ -620,8 +705,8 @@ impl AuthService {
         }
 
         let password_hash = self.hash_password(new_password)?;
-        self.users_repo.update_password(&tenant_id, user_id, &password_hash).await?;
-        self.users_repo.set_force_password_change(&tenant_id, user_id, false).await?;
+        // update_password also clears the global force_password_change flag.
+        self.identities_repo.update_password(user.identity_id, &password_hash).await?;
         self.force_change_tokens_repo.delete_by_token(change_token).await?;
 
         self.do_create_session(&tenant_id, &user, ip, user_agent).await
@@ -678,20 +763,41 @@ impl AuthService {
             }
             (None, None) => None,
         };
-        let user = self
-            .users_repo
-            .create(
-                tenant_id,
-                first_name.map(|s| s.trim()).filter(|s| !s.is_empty()),
-                last_name.map(|s| s.trim()).filter(|s| !s.is_empty()),
-                email,
-                username,
-                mobile,
-                country_code,
-                password_hash.as_deref(),
-            )
+        let first = first_name.map(|s| s.trim()).filter(|s| !s.is_empty());
+        let last = last_name.map(|s| s.trim()).filter(|s| !s.is_empty());
+        // Admin is trusted: attach to an existing global identity if the email/mobile maps
+        // to one; otherwise create (handle-less if username-only).
+        let identity = self
+            .resolve_or_create_identity(email, mobile, country_code, first, last, password_hash.as_deref())
             .await?;
+        let user = self.users_repo.create(&identity, tenant_id, username).await?;
         Ok(user)
+    }
+
+    /// Find a global identity by email or mobile, or create one. Used by the trusted admin
+    /// provisioning path (attach-if-exists).
+    async fn resolve_or_create_identity(
+        &self,
+        email: Option<&str>,
+        mobile: Option<&str>,
+        country_code: Option<&str>,
+        first_name: Option<&str>,
+        last_name: Option<&str>,
+        password_hash: Option<&str>,
+    ) -> Result<Identity, AppError> {
+        if let Some(e) = email {
+            if let Some(i) = self.identities_repo.get_by_email(e).await? {
+                return Ok(i);
+            }
+        }
+        if let (Some(m), Some(c)) = (mobile, country_code) {
+            if let Some(i) = self.identities_repo.get_by_mobile(c, m).await? {
+                return Ok(i);
+            }
+        }
+        self.identities_repo
+            .create(email, mobile, country_code, first_name, last_name, password_hash)
+            .await
     }
 
     pub async fn admin_set_access_valid_until(
@@ -722,6 +828,127 @@ impl AuthService {
         }
         Ok(())
     }
+
+    // ---- SSO: identity-first (tenant-less) login + tenant selection -------------------
+
+    /// Tenant-less login by a global handle (email). Verifies the shared credential and
+    /// global lockout, then returns the identity id and its tenant memberships. The route
+    /// layer issues a short-lived identity token from this; tenant selection happens via
+    /// `select_tenant`. (force-change / MFA are evaluated per-tenant at selection time.)
+    pub async fn login_identity(
+        &self,
+        email: &str,
+        password: &str,
+    ) -> Result<(String, Vec<TenantMembership>), AppError> {
+        let email = email.trim();
+        let identity = self
+            .identities_repo
+            .get_by_email(email)
+            .await?
+            .ok_or_else(|| AppError::Unauthorized("Invalid credentials".to_string()))?;
+        if identity.status != "active" {
+            return Err(AppError::Forbidden("Account is not active".to_string()));
+        }
+        if let Some(locked_until) = identity.locked_until {
+            if locked_until > Utc::now() {
+                return Err(AppError::Locked("Account is temporarily locked".to_string()));
+            }
+        }
+        let password_hash = identity
+            .password_hash
+            .as_ref()
+            .ok_or_else(|| AppError::Unauthorized("Invalid credentials".to_string()))?;
+        if !self.verify_password(password_hash, password)? {
+            self.register_failed_attempt(&identity).await?;
+            return Err(AppError::Unauthorized("Invalid credentials".to_string()));
+        }
+        self.identities_repo.clear_failed_attempts(identity.id).await?;
+
+        let identity_token = generate_session_token();
+        let expires_at = Utc::now() + Duration::minutes(IDENTITY_TOKEN_TTL_MINS);
+        self.identity_tokens_repo
+            .create(identity.id, &identity_token, expires_at)
+            .await?;
+        let tenants = self.tenants_for_identity(identity.id).await?;
+        Ok((identity_token, tenants))
+    }
+
+    /// Resolve an identity token to its tenant memberships (the SSO tenant picker).
+    pub async fn tenants_for_identity_token(
+        &self,
+        identity_token: &str,
+    ) -> Result<Vec<TenantMembership>, AppError> {
+        let identity_id = self
+            .identity_tokens_repo
+            .get_valid(identity_token)
+            .await?
+            .ok_or_else(|| AppError::Unauthorized("Invalid or expired identity token".to_string()))?;
+        self.tenants_for_identity(identity_id).await
+    }
+
+    async fn tenants_for_identity(&self, identity_id: Uuid) -> Result<Vec<TenantMembership>, AppError> {
+        Ok(self
+            .users_repo
+            .get_memberships_for_identity(identity_id)
+            .await?
+            .into_iter()
+            .map(|m| TenantMembership {
+                tenant_id: m.tenant_id,
+                status: m.status,
+            })
+            .collect())
+    }
+
+    /// Exchange an identity token for a tenant-scoped session (SSO select-tenant).
+    pub async fn select_tenant_with_token(
+        &self,
+        identity_token: &str,
+        tenant_id: &str,
+        ip: Option<&str>,
+        user_agent: Option<&str>,
+    ) -> Result<LoginResult, AppError> {
+        let identity_id = self
+            .identity_tokens_repo
+            .get_valid(identity_token)
+            .await?
+            .ok_or_else(|| AppError::Unauthorized("Invalid or expired identity token".to_string()))?;
+        self.select_tenant(identity_id, tenant_id, ip, user_agent).await
+    }
+
+    /// Mint a tenant-scoped session for an already-authenticated identity (SSO
+    /// select-tenant and session-switch share this). Verifies the membership exists and
+    /// passes the same gates / force-change / MFA tail as a direct login.
+    pub async fn select_tenant(
+        &self,
+        identity_id: Uuid,
+        tenant_id: &str,
+        ip: Option<&str>,
+        user_agent: Option<&str>,
+    ) -> Result<LoginResult, AppError> {
+        let user = self
+            .users_repo
+            .get_membership(identity_id, tenant_id)
+            .await?
+            .ok_or_else(|| AppError::Forbidden("No membership in this tenant".to_string()))?;
+        let identity = self.load_identity(identity_id).await?;
+        Self::check_gates(&user, &identity)?;
+        self.finalize_login(tenant_id, &user, &identity, ip, user_agent).await
+    }
+}
+
+/// A tenant the identity belongs to, returned by `login_identity` for the SSO tenant picker.
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TenantMembership {
+    pub tenant_id: String,
+    pub status: String,
+}
+
+/// Outcome of a public signup. A collision with an existing global identity yields
+/// `VerificationSent` (an email goes to the real owner) rather than creating an account.
+pub enum SignupOutcome {
+    Created(User),
+    VerificationSent { email: String, token: String },
 }
 
 pub enum LoginResult {

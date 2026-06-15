@@ -8,6 +8,8 @@ use uuid::Uuid;
 pub struct SessionPayload {
     pub tenant_id: String,
     pub user_id: Uuid,
+    /// The global identity behind this membership (same human across tenants).
+    pub identity_id: Uuid,
     /// Effective role UIDs (direct + inherited through groups) — Cedar entity hierarchy.
     pub roles: Vec<String>,
     /// Effective role primary-key UUIDs (direct + via groups) — role-scoped PolicySet loading.

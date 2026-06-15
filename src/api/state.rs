@@ -9,6 +9,9 @@ use crate::policy::schema::{build_schema_str, parse_schema};
 use crate::repo::{
     force_change_tokens::ForceChangeTokensRepo,
     groups::GroupsRepo,
+    identities::IdentitiesRepo,
+    identity_tokens::IdentityTokensRepo,
+    membership_invites::MembershipInvitesRepo,
     kv_store::KvStoreRepo,
     otp::OtpRepo,
     packages::PackagesRepo,
@@ -66,6 +69,9 @@ impl AppState {
             tenant_config: tenant_config.clone(),
         };
         let users_repo = UsersRepo::new(pool.clone());
+        let identities_repo = IdentitiesRepo::new(pool.clone());
+        let identity_tokens_repo = IdentityTokensRepo::new(pool.clone());
+        let membership_invites_repo = MembershipInvitesRepo::new(pool.clone());
         let roles_repo = RolesRepo::new(pool.clone());
         let groups_repo = GroupsRepo::new(pool.clone());
         let password_reset_tokens_repo = PasswordResetTokensRepo::new(pool.clone());
@@ -78,6 +84,9 @@ impl AppState {
         };
         let auth_service = AuthService::new(
             users_repo,
+            identities_repo,
+            identity_tokens_repo,
+            membership_invites_repo,
             roles_repo,
             groups_repo,
             password_reset_tokens_repo,

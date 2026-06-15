@@ -39,6 +39,12 @@ struct ForceChangePasswordBody {
     retype_password: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SwitchTenantBody {
+    tenant_id: String,
+}
+
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/validate", get(session_validate))
@@ -47,6 +53,8 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/force-change-password", post(force_change_password))
         .route("/logout", post(logout))
         .route("/logout/all", post(logout_all))
+        .route("/logout/global", post(logout_global))
+        .route("/switch", post(switch_tenant))
 }
 
 async fn session_validate(
@@ -62,6 +70,7 @@ async fn session_validate(
     Ok(Json(serde_json::json!({
         "tenantId": payload.tenant_id,
         "userId": payload.user_id,
+        "identityId": payload.identity_id,
         "roles": payload.roles,
         "permissions": payload.permissions,
         "expiresAt": payload.expires_at.to_rfc3339()
@@ -87,6 +96,7 @@ async fn session_me(
     let user_json = serde_json::to_value(&user).map_err(|e| AppError::Internal(e.to_string()))?;
     Ok(Json(serde_json::json!({
         "userId": payload.user_id,
+        "identityId": payload.identity_id,
         "roles": payload.roles,
         "permissions": payload.permissions,
         "expiresAt": payload.expires_at.to_rfc3339(),
@@ -170,4 +180,61 @@ async fn force_change_password(
         }))),
         _ => Err(AppError::Internal("Unexpected login state after password change".to_string())),
     }
+}
+
+/// Switch to another tenant the same identity belongs to, without re-authenticating.
+/// Bearer = an active session token; mints a new session for the target tenant.
+async fn switch_tenant(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<SwitchTenantBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let session_token = bearer_token(&headers)?;
+    let payload = state
+        .session_store
+        .get(session_token)
+        .await?
+        .ok_or_else(|| AppError::Unauthorized("Invalid or expired session".to_string()))?;
+    let result = state
+        .auth_service
+        .select_tenant(payload.identity_id, &body.tenant_id, None, None)
+        .await?;
+    match result {
+        LoginResult::Success { session_token, expires_at } => Ok(Json(serde_json::json!({
+            "sessionToken": session_token,
+            "expiresAt": expires_at.to_rfc3339()
+        }))),
+        LoginResult::MfaRequired { mfa_token, .. } => Ok(Json(serde_json::json!({
+            "mfaRequired": true,
+            "mfaToken": mfa_token
+        }))),
+        LoginResult::PasswordChangeRequired { change_token } => Ok(Json(serde_json::json!({
+            "passwordChangeRequired": true,
+            "changeToken": change_token
+        }))),
+    }
+}
+
+/// Global logout: revoke every session of this identity across all its tenants.
+async fn logout_global(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let session_token = bearer_token(&headers)?;
+    let payload = state
+        .session_store
+        .get(session_token)
+        .await?
+        .ok_or_else(|| AppError::Unauthorized("Invalid or expired session".to_string()))?;
+    let memberships = state
+        .auth_service
+        .users_repo()
+        .get_memberships_for_identity(payload.identity_id)
+        .await?;
+    let mut revoked: u64 = 0;
+    for m in memberships {
+        revoked += state.session_store.delete_all_for_user(&m.tenant_id, m.id).await?;
+        let _ = state.sessions_repo.revoke_all_for_user(&m.tenant_id, m.id).await;
+    }
+    Ok(Json(serde_json::json!({ "ok": true, "sessionsRevoked": revoked })))
 }
