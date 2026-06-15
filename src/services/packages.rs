@@ -37,23 +37,27 @@ impl PackagesService {
         &self,
         package_id: &str,
         tables: &[String],
+        extensible_tables: &[String],
         custom_actions: &[String],
     ) -> Result<(), AppError> {
         // Derive CRUD actions from the table list (mirrors build_schema_str logic)
         let mut all_actions: Vec<String> = tables
             .iter()
-            .flat_map(|table| {
-                let pascal = crate::policy::schema::to_pascal_case(table);
-                ["get", "post", "patch", "put", "delete", "archive", "unarchive"]
-                    .iter()
-                    .map(move |verb| format!("{verb}{pascal}"))
-            })
+            .flat_map(|table| crate::policy::schema::crud_action_names(table))
             .collect();
+        // Derive extensible-fields actions for the tables flagged extensible
+        all_actions.extend(
+            extensible_tables
+                .iter()
+                .flat_map(|table| crate::policy::schema::extensible_action_names(table)),
+        );
         all_actions.extend_from_slice(custom_actions);
         all_actions.sort();
         all_actions.dedup();
 
-        self.repo.sync_package(package_id, tables, &all_actions).await?;
+        self.repo
+            .sync_package(package_id, tables, &all_actions)
+            .await?;
 
         self.rebuild_schema().await?;
         self.permissions_service.evict_all();
@@ -112,9 +116,19 @@ impl PackagesService {
         let all_tables = self.repo.list_tables().await?;
         let all_custom = self.repo.list_custom_actions().await?;
 
+        // Stored (package_id, action_name) pairs — the action registry. A table is
+        // "extensible" iff its extensible-fields actions were registered here during sync,
+        // so no separate flag/column is needed to recover scope.
+        let stored: std::collections::HashSet<(&str, &str)> = all_custom
+            .iter()
+            .map(|(p, a)| (p.as_str(), a.as_str()))
+            .collect();
+
         let mut actions: Vec<(String, String)> = Vec::new();
 
-        // CRUD actions derived from matching tables
+        // CRUD + extensible-fields actions derived from matching tables.
+        // Both are table-scoped: the architect-sdk proxy checks them against the
+        // table-level resource, so the compiled policy's `resource ==` check must match that.
         for (pkg, tbl) in &all_tables {
             let include = match (&package_id, &table_name) {
                 // table or column scope: exact table match within the package
@@ -125,7 +139,6 @@ impl PackagesService {
                 (None, _) => true,
             };
             if include {
-                let pascal = crate::policy::schema::to_pascal_case(tbl);
                 // Policies are compiled with resource == <table-level path>; use that exact
                 // path so the Cedar equality check fires rather than comparing against a
                 // higher-level Package or Service entity.
@@ -134,8 +147,18 @@ impl PackagesService {
                 } else {
                     format!("{service_prefix}/package:{pkg}/table:{tbl}")
                 };
-                for verb in &["get", "post", "patch", "put", "delete", "archive", "unarchive"] {
-                    actions.push((format!("{verb}{pascal}"), table_resource.clone()));
+                for action in crate::policy::schema::crud_action_names(tbl) {
+                    actions.push((action, table_resource.clone()));
+                }
+                // Extensible iff the derived extensible actions are in the registry.
+                let ext_actions = crate::policy::schema::extensible_action_names(tbl);
+                let is_extensible = ext_actions
+                    .iter()
+                    .any(|a| stored.contains(&(pkg.as_str(), a.as_str())));
+                if is_extensible {
+                    for action in ext_actions {
+                        actions.push((action, table_resource.clone()));
+                    }
                 }
             }
         }

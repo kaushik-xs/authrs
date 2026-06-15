@@ -13,6 +13,10 @@ use crate::error::AppError;
 struct SyncPackageBody {
     package_id: String,
     tables: Vec<String>,
+    /// Subset of `tables` that expose extensible-fields routes (>= 1 `extensible` JSON column).
+    /// authrs derives getExtensibleFields/putExtensibleFields/deleteExtensibleFields<Table> for these.
+    #[serde(default)]
+    extensible_tables: Vec<String>,
     #[serde(default)]
     custom_actions: Vec<String>,
 }
@@ -79,13 +83,19 @@ async fn sync_package(
 
     state
         .packages_service
-        .sync(&body.package_id, &body.tables, &body.custom_actions)
+        .sync(
+            &body.package_id,
+            &body.tables,
+            &body.extensible_tables,
+            &body.custom_actions,
+        )
         .await?;
 
     Ok(Json(serde_json::json!({
         "message": "Package synced and Cedar schema rebuilt",
         "packageId": body.package_id,
         "tables": body.tables.len(),
+        "extensibleTables": body.extensible_tables.len(),
         "customActions": body.custom_actions.len()
     })))
 }
