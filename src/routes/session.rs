@@ -49,6 +49,7 @@ pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/validate", get(session_validate))
         .route("/me", get(session_me))
+        .route("/tenants", get(session_tenants))
         .route("/change-password", post(change_password))
         .route("/force-change-password", post(force_change_password))
         .route("/logout", post(logout))
@@ -101,6 +102,28 @@ async fn session_me(
         "permissions": payload.permissions,
         "expiresAt": payload.expires_at.to_rfc3339(),
         "user": user_json
+    })))
+}
+
+/// List all tenants the current session's identity belongs to (for a tenant switcher /
+/// logging). Uses the identity behind the session — no re-authentication needed.
+async fn session_tenants(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let session_token = bearer_token(&headers)?;
+    let payload = state
+        .session_store
+        .get(session_token)
+        .await?
+        .ok_or_else(|| AppError::Unauthorized("Invalid or expired session".to_string()))?;
+    let tenants = state
+        .auth_service
+        .tenants_for_identity(payload.identity_id)
+        .await?;
+    Ok(Json(serde_json::json!({
+        "currentTenantId": payload.tenant_id,
+        "tenants": tenants,
     })))
 }
 

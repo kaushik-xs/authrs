@@ -886,7 +886,8 @@ impl AuthService {
         self.tenants_for_identity(identity_id).await
     }
 
-    async fn tenants_for_identity(&self, identity_id: Uuid) -> Result<Vec<TenantMembership>, AppError> {
+    /// The tenant memberships of an identity (for the SSO tenant picker / session switcher).
+    pub async fn tenants_for_identity(&self, identity_id: Uuid) -> Result<Vec<TenantMembership>, AppError> {
         Ok(self
             .users_repo
             .get_memberships_for_identity(identity_id)
