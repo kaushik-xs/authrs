@@ -348,6 +348,11 @@ struct CreatePermissionBody {
     #[serde(default)]
     description: Option<String>,
     document: PermissionDocument,
+    /// When true, an existing permission with the same (tenant, name) is overwritten
+    /// in place (its Cedar document is replaced) instead of failing on the unique
+    /// constraint. Used by the RBAC sync flows so re-syncing is idempotent.
+    #[serde(default)]
+    overwrite: bool,
 }
 
 #[derive(Deserialize)]
@@ -370,16 +375,24 @@ async fn admin_create_permission(
     crate::policy::compiler::compile(&resolved_doc, "validation-pass")
         .map_err(|e| AppError::BadRequest(format!("Invalid permission document: {e}")))?;
 
-    let id = state
-        .permissions_service
-        .repo()
-        .create(
+    let repo = state.permissions_service.repo();
+    let id = if body.overwrite {
+        repo.upsert(
             &tenant_id.0,
             &body.name,
             body.description.as_deref(),
             &resolved_doc,
         )
-        .await?;
+        .await?
+    } else {
+        repo.create(
+            &tenant_id.0,
+            &body.name,
+            body.description.as_deref(),
+            &resolved_doc,
+        )
+        .await?
+    };
 
     state.permissions_service.evict(&tenant_id.0);
 

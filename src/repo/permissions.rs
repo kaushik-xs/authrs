@@ -41,6 +41,39 @@ impl PermissionsRepo {
         Ok(id)
     }
 
+    /// Create a permission, or overwrite the existing one when a permission with the
+    /// same (tenant_id, name) already exists. On conflict the existing row is kept —
+    /// preserving its id and any role attachments — and only its description and
+    /// document are updated. Returns the id of the created-or-updated row.
+    pub async fn upsert(
+        &self,
+        tenant_id: &str,
+        name: &str,
+        description: Option<&str>,
+        document: &PermissionDocument,
+    ) -> Result<Uuid, AppError> {
+        let id = Uuid::new_v4();
+        let doc_json =
+            serde_json::to_value(document).map_err(|e| AppError::Internal(e.to_string()))?;
+        let (existing_id,): (Uuid,) = sqlx::query_as(
+            r#"
+            INSERT INTO permissions (id, tenant_id, name, description, document)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (tenant_id, name)
+            DO UPDATE SET description = EXCLUDED.description, document = EXCLUDED.document
+            RETURNING id
+            "#,
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .bind(name)
+        .bind(description)
+        .bind(doc_json)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(existing_id)
+    }
+
     pub async fn list(
         &self,
         tenant_id: &str,
