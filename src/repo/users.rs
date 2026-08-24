@@ -165,6 +165,49 @@ impl UsersRepo {
         Ok(rows.into_iter().map(Self::row_to_user).collect())
     }
 
+    /// Full membership rows for the members of a group. Same shape as [`list`], joined through
+    /// `user_groups`. Supports optional RSQL `filter`/`sort` (validated against
+    /// [`USER_FILTER_FIELDS`]) plus `limit`/`offset` — so callers can pull a specific member by
+    /// e.g. `username==...`, `firstName==...`, or `email==...`. With no `sort`, orders by the
+    /// membership's `created_at` in the group (join time) ascending.
+    pub async fn list_by_group(
+        &self,
+        tenant_id: &str,
+        group_id: Uuid,
+        filter: Option<&FilterNode>,
+        sort: &[SortSpec],
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<User>, AppError> {
+        // tenant_id is $1, group_id is $2; RSQL params begin at $3.
+        let built = query::build(filter, sort, USER_FILTER_FIELDS, 3)?;
+
+        let mut where_sql = String::from("u.tenant_id = $1 AND ug.group_id = $2");
+        if !built.where_sql.is_empty() {
+            where_sql.push_str(" AND ");
+            where_sql.push_str(&built.where_sql);
+        }
+        let order_sql = if built.order_sql.is_empty() {
+            " ORDER BY ug.created_at ASC".to_string()
+        } else {
+            built.order_sql
+        };
+        let sql = format!(
+            "SELECT {SELECT_COLS} {FROM_JOIN} \
+             JOIN user_groups ug ON ug.user_id = u.id \
+             WHERE {where_sql}{order_sql} LIMIT {limit} OFFSET {offset}"
+        );
+
+        let mut q = sqlx::query_as::<_, UserRow>(&sql)
+            .bind(tenant_id)
+            .bind(group_id);
+        for p in &built.params {
+            q = q.bind(p);
+        }
+        let rows = q.fetch_all(&self.pool).await?;
+        Ok(rows.into_iter().map(Self::row_to_user).collect())
+    }
+
     pub async fn archive(&self, tenant_id: &str, user_id: Uuid) -> Result<bool, AppError> {
         let result = sqlx::query(
             "UPDATE users SET status = 'archived', updated_at = now() WHERE tenant_id = $1 AND id = $2 AND status != 'archived'",

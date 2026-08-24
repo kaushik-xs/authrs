@@ -648,13 +648,21 @@ async fn admin_list_group_members(
     State(state): State<Arc<AppState>>,
     tenant_id: TenantId,
     Path(group_id): Path<Uuid>,
+    Query(params): Query<ListUsersQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let user_ids = state
+    let (filter, sort) =
+        crate::query::parse_list_params(params.q.as_deref(), params.sort.as_deref())?;
+    let (limit, offset) = crate::query::clamp_pagination(params.limit, params.offset, 50);
+    let users = state
         .auth_service
-        .groups_repo()
-        .list_members(&tenant_id.0, group_id)
+        .users_repo()
+        .list_by_group(&tenant_id.0, group_id, filter.as_ref(), &sort, limit, offset)
         .await?;
-    Ok(Json(serde_json::json!({ "users": user_ids })))
+    let users_json: Vec<serde_json::Value> = users
+        .into_iter()
+        .map(|u| serde_json::to_value(&u).unwrap_or_default())
+        .collect();
+    Ok(Json(serde_json::json!({ "users": users_json })))
 }
 
 async fn admin_remove_user_from_group(
