@@ -179,28 +179,6 @@ impl GroupsRepo {
         Ok(r.rows_affected() > 0)
     }
 
-    /// List all user IDs that are members of a group.
-    pub async fn list_members(
-        &self,
-        tenant_id: &str,
-        group_id: Uuid,
-    ) -> Result<Vec<Uuid>, AppError> {
-        let rows = sqlx::query_as::<_, (Uuid,)>(
-            r#"
-            SELECT ug.user_id
-            FROM user_groups ug
-            INNER JOIN groups g ON g.id = ug.group_id
-            WHERE ug.group_id = $1 AND g.tenant_id = $2
-            ORDER BY ug.created_at
-            "#,
-        )
-        .bind(group_id)
-        .bind(tenant_id)
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows.into_iter().map(|(id,)| id).collect())
-    }
-
     /// Groups a user belongs to. Returns (id, name, uid).
     pub async fn get_user_groups(
         &self,
