@@ -6,8 +6,32 @@
 use crate::domain::identity::Identity;
 use crate::domain::user::User;
 use crate::error::AppError;
+use crate::query::{self, FieldSpec, FieldType, FilterNode, SortSpec};
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
+
+/// RSQL-filterable/sortable fields for `GET /admin/users`. Names are the camelCase JSON
+/// keys clients see in responses; columns are qualified against the `u`/`i` aliases used
+/// by `SELECT_COLS`. `password_hash` / `mfa_secret` are listed as `sensitive` so filtering
+/// or sorting on them is rejected with a 422 rather than a vague "unknown field".
+pub const USER_FILTER_FIELDS: &[FieldSpec] = &[
+    FieldSpec { api_name: "id", column: "u.id", ty: FieldType::Uuid, sensitive: false },
+    FieldSpec { api_name: "identityId", column: "u.identity_id", ty: FieldType::Uuid, sensitive: false },
+    FieldSpec { api_name: "firstName", column: "i.first_name", ty: FieldType::Text, sensitive: false },
+    FieldSpec { api_name: "lastName", column: "i.last_name", ty: FieldType::Text, sensitive: false },
+    FieldSpec { api_name: "email", column: "i.email", ty: FieldType::Text, sensitive: false },
+    FieldSpec { api_name: "username", column: "u.username", ty: FieldType::Text, sensitive: false },
+    FieldSpec { api_name: "mobile", column: "i.mobile", ty: FieldType::Text, sensitive: false },
+    FieldSpec { api_name: "countryCode", column: "i.country_code", ty: FieldType::Text, sensitive: false },
+    FieldSpec { api_name: "status", column: "u.status", ty: FieldType::Text, sensitive: false },
+    FieldSpec { api_name: "mfaEnabled", column: "i.mfa_enabled", ty: FieldType::Bool, sensitive: false },
+    FieldSpec { api_name: "accessValidUntil", column: "u.access_valid_until", ty: FieldType::Timestamp, sensitive: false },
+    FieldSpec { api_name: "createdAt", column: "u.created_at", ty: FieldType::Timestamp, sensitive: false },
+    FieldSpec { api_name: "updatedAt", column: "u.updated_at", ty: FieldType::Timestamp, sensitive: false },
+    // Sensitive identity columns — never filterable/sortable.
+    FieldSpec { api_name: "passwordHash", column: "i.password_hash", ty: FieldType::Text, sensitive: true },
+    FieldSpec { api_name: "mfaSecret", column: "i.mfa_secret", ty: FieldType::Text, sensitive: true },
+];
 
 /// Select list + join used by every membership read. `u` = users, `i` = identities.
 const SELECT_COLS: &str = "u.id, u.tenant_id, u.identity_id, i.first_name, i.last_name, \
@@ -101,17 +125,43 @@ impl UsersRepo {
         })
     }
 
-    /// List memberships for a tenant (newest first). Excludes archived unless requested.
-    pub async fn list(&self, tenant_id: &str, include_archived: bool) -> Result<Vec<User>, AppError> {
-        let sql = if include_archived {
-            format!("SELECT {SELECT_COLS} {FROM_JOIN} WHERE u.tenant_id = $1 ORDER BY u.created_at DESC")
+    /// List memberships for a tenant. Excludes archived unless requested. Supports optional
+    /// RSQL `filter` and `sort` (validated against [`USER_FILTER_FIELDS`]) plus `limit`/`offset`.
+    /// With no `sort`, falls back to newest-first (`created_at DESC`).
+    pub async fn list(
+        &self,
+        tenant_id: &str,
+        include_archived: bool,
+        filter: Option<&FilterNode>,
+        sort: &[SortSpec],
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<User>, AppError> {
+        // tenant_id is $1; RSQL params begin at $2.
+        let built = query::build(filter, sort, USER_FILTER_FIELDS, 2)?;
+
+        let mut where_sql = String::from("u.tenant_id = $1");
+        if !include_archived {
+            where_sql.push_str(" AND u.status != 'archived'");
+        }
+        if !built.where_sql.is_empty() {
+            where_sql.push_str(" AND ");
+            where_sql.push_str(&built.where_sql);
+        }
+        let order_sql = if built.order_sql.is_empty() {
+            " ORDER BY u.created_at DESC".to_string()
         } else {
-            format!("SELECT {SELECT_COLS} {FROM_JOIN} WHERE u.tenant_id = $1 AND u.status != 'archived' ORDER BY u.created_at DESC")
+            built.order_sql
         };
-        let rows = sqlx::query_as::<_, UserRow>(&sql)
-            .bind(tenant_id)
-            .fetch_all(&self.pool)
-            .await?;
+        let sql = format!(
+            "SELECT {SELECT_COLS} {FROM_JOIN} WHERE {where_sql}{order_sql} LIMIT {limit} OFFSET {offset}"
+        );
+
+        let mut q = sqlx::query_as::<_, UserRow>(&sql).bind(tenant_id);
+        for p in &built.params {
+            q = q.bind(p);
+        }
+        let rows = q.fetch_all(&self.pool).await?;
         Ok(rows.into_iter().map(Self::row_to_user).collect())
     }
 

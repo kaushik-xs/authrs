@@ -209,11 +209,26 @@ async fn admin_create_user(
     ))
 }
 
+/// Common list query params for RSQL-capable list endpoints: `q` (RSQL filter),
+/// `sort`, and `limit`/`offset` pagination.
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct ListQuery {
+    q: Option<String>,
+    sort: Option<String>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ListUsersQuery {
     #[serde(default)]
     include_archived: bool,
+    q: Option<String>,
+    sort: Option<String>,
+    limit: Option<u32>,
+    offset: Option<u32>,
 }
 
 async fn admin_list_users(
@@ -221,10 +236,20 @@ async fn admin_list_users(
     tenant_id: TenantId,
     Query(params): Query<ListUsersQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let (filter, sort) =
+        crate::query::parse_list_params(params.q.as_deref(), params.sort.as_deref())?;
+    let (limit, offset) = crate::query::clamp_pagination(params.limit, params.offset, 50);
     let users = state
         .auth_service
         .users_repo()
-        .list(&tenant_id.0, params.include_archived)
+        .list(
+            &tenant_id.0,
+            params.include_archived,
+            filter.as_ref(),
+            &sort,
+            limit,
+            offset,
+        )
         .await?;
     let users_json: Vec<serde_json::Value> = users
         .into_iter()
@@ -277,11 +302,14 @@ async fn admin_create_role(
 async fn admin_list_roles(
     State(state): State<Arc<AppState>>,
     tenant_id: TenantId,
+    Query(params): Query<ListQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let (filter, sort) = crate::query::parse_list_params(params.q.as_deref(), params.sort.as_deref())?;
+    let (limit, offset) = crate::query::clamp_pagination(params.limit, params.offset, 50);
     let roles = state
         .auth_service
         .roles_repo()
-        .list_roles(&tenant_id.0)
+        .list_roles(&tenant_id.0, filter.as_ref(), &sort, limit, offset)
         .await?;
     let roles_json: Vec<serde_json::Value> = roles
         .into_iter()
@@ -405,11 +433,14 @@ async fn admin_create_permission(
 async fn admin_list_permissions(
     State(state): State<Arc<AppState>>,
     tenant_id: TenantId,
+    Query(params): Query<ListQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let (filter, sort) = crate::query::parse_list_params(params.q.as_deref(), params.sort.as_deref())?;
+    let (limit, offset) = crate::query::clamp_pagination(params.limit, params.offset, 50);
     let perms = state
         .permissions_service
         .repo()
-        .list(&tenant_id.0)
+        .list(&tenant_id.0, filter.as_ref(), &sort, limit, offset)
         .await?;
     let out: Vec<serde_json::Value> = perms
         .into_iter()
@@ -546,8 +577,15 @@ async fn admin_create_group(
 async fn admin_list_groups(
     State(state): State<Arc<AppState>>,
     tenant_id: TenantId,
+    Query(params): Query<ListQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let groups = state.auth_service.groups_repo().list(&tenant_id.0).await?;
+    let (filter, sort) = crate::query::parse_list_params(params.q.as_deref(), params.sort.as_deref())?;
+    let (limit, offset) = crate::query::clamp_pagination(params.limit, params.offset, 50);
+    let groups = state
+        .auth_service
+        .groups_repo()
+        .list(&tenant_id.0, filter.as_ref(), &sort, limit, offset)
+        .await?;
     let out: Vec<serde_json::Value> = groups
         .into_iter()
         .map(|(id, name, uid, desc)| {

@@ -18,6 +18,8 @@ pub enum AppError {
     Locked(String),
     AccessExpired(String),
     TooManyRequests(String),
+    /// Invalid query/filter input (e.g. malformed RSQL). Maps to HTTP 422.
+    Validation(String),
     Internal(String),
 }
 
@@ -32,6 +34,7 @@ impl Display for AppError {
             AppError::Locked(s) => write!(f, "Account locked: {}", s),
             AppError::AccessExpired(s) => write!(f, "Access expired: {}", s),
             AppError::TooManyRequests(s) => write!(f, "Rate limit: {}", s),
+            AppError::Validation(s) => write!(f, "Validation error: {}", s),
             AppError::Internal(s) => write!(f, "Internal error: {}", s),
         }
     }
@@ -57,6 +60,7 @@ impl IntoResponse for AppError {
             AppError::Locked(_) => (StatusCode::LOCKED, "account_locked"),
             AppError::AccessExpired(_) => (StatusCode::FORBIDDEN, "access_expired"),
             AppError::TooManyRequests(_) => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
+            AppError::Validation(_) => (StatusCode::UNPROCESSABLE_ENTITY, "invalid_filter"),
             AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error"),
         };
         (

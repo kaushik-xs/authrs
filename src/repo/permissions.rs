@@ -2,8 +2,17 @@
 
 use crate::error::AppError;
 use crate::policy::domain::PermissionDocument;
+use crate::query::{self, FieldSpec, FieldType, FilterNode, SortSpec};
 use sqlx::PgPool;
 use uuid::Uuid;
+
+/// RSQL-filterable/sortable fields for `GET /admin/permissions`. The `document` JSONB is
+/// intentionally not exposed for filtering.
+pub const PERMISSION_FILTER_FIELDS: &[FieldSpec] = &[
+    FieldSpec { api_name: "id", column: "id", ty: FieldType::Uuid, sensitive: false },
+    FieldSpec { api_name: "name", column: "name", ty: FieldType::Text, sensitive: false },
+    FieldSpec { api_name: "description", column: "description", ty: FieldType::Text, sensitive: false },
+];
 
 #[derive(Clone)]
 pub struct PermissionsRepo {
@@ -74,21 +83,38 @@ impl PermissionsRepo {
         Ok(existing_id)
     }
 
+    /// List permissions for a tenant. Supports optional RSQL `filter`/`sort` (validated
+    /// against [`PERMISSION_FILTER_FIELDS`]) plus `limit`/`offset`. With no `sort`, falls
+    /// back to name ASC.
     pub async fn list(
         &self,
         tenant_id: &str,
+        filter: Option<&FilterNode>,
+        sort: &[SortSpec],
+        limit: u32,
+        offset: u32,
     ) -> Result<Vec<(Uuid, String, Option<String>, PermissionDocument)>, AppError> {
-        let rows = sqlx::query_as::<_, (Uuid, String, Option<String>, serde_json::Value)>(
-            r#"
-            SELECT id, name, description, document
-            FROM permissions
-            WHERE tenant_id = $1 AND document IS NOT NULL
-            ORDER BY name
-            "#,
-        )
-        .bind(tenant_id)
-        .fetch_all(&self.pool)
-        .await?;
+        let built = query::build(filter, sort, PERMISSION_FILTER_FIELDS, 2)?;
+        let mut where_sql = String::from("tenant_id = $1 AND document IS NOT NULL");
+        if !built.where_sql.is_empty() {
+            where_sql.push_str(" AND ");
+            where_sql.push_str(&built.where_sql);
+        }
+        let order_sql = if built.order_sql.is_empty() {
+            " ORDER BY name".to_string()
+        } else {
+            built.order_sql
+        };
+        let sql = format!(
+            "SELECT id, name, description, document FROM permissions WHERE {where_sql}{order_sql} LIMIT {limit} OFFSET {offset}"
+        );
+        let mut query_b =
+            sqlx::query_as::<_, (Uuid, String, Option<String>, serde_json::Value)>(&sql)
+                .bind(tenant_id);
+        for p in &built.params {
+            query_b = query_b.bind(p);
+        }
+        let rows = query_b.fetch_all(&self.pool).await?;
 
         rows.into_iter()
             .map(|(id, name, desc, doc_val)| {

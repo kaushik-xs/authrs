@@ -8,6 +8,7 @@ pub mod api;
 pub mod domain;
 pub mod openapi;
 pub mod policy;
+pub mod query;
 pub mod routes;
 pub mod services;
 pub mod repo;

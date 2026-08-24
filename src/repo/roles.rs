@@ -1,8 +1,17 @@
 //! Roles, role_permissions, user_roles: roles are assigned only to users (never to groups).
 
 use crate::error::AppError;
+use crate::query::{self, FieldSpec, FieldType, FilterNode, SortSpec};
 use sqlx::PgPool;
 use uuid::Uuid;
+
+/// RSQL-filterable/sortable fields for `GET /admin/roles`.
+pub const ROLE_FILTER_FIELDS: &[FieldSpec] = &[
+    FieldSpec { api_name: "id", column: "id", ty: FieldType::Uuid, sensitive: false },
+    FieldSpec { api_name: "name", column: "name", ty: FieldType::Text, sensitive: false },
+    FieldSpec { api_name: "uid", column: "uid", ty: FieldType::Text, sensitive: false },
+    FieldSpec { api_name: "parentRoleId", column: "parent_role_id", ty: FieldType::Uuid, sensitive: false },
+];
 
 #[derive(Clone)]
 pub struct RolesRepo {
@@ -255,17 +264,36 @@ impl RolesRepo {
         Ok(rows)
     }
 
-    /// List all roles for a tenant (id, name, uid, parent_role_id).
+    /// List all roles for a tenant (id, name, uid, parent_role_id). Supports optional RSQL
+    /// `filter`/`sort` (validated against [`ROLE_FILTER_FIELDS`]) plus `limit`/`offset`.
+    /// With no `sort`, falls back to name ASC.
     pub async fn list_roles(
         &self,
         tenant_id: &str,
+        filter: Option<&FilterNode>,
+        sort: &[SortSpec],
+        limit: u32,
+        offset: u32,
     ) -> Result<Vec<(Uuid, String, String, Option<Uuid>)>, AppError> {
-        let rows = sqlx::query_as::<_, (Uuid, String, String, Option<Uuid>)>(
-            "SELECT id, name, uid, parent_role_id FROM roles WHERE tenant_id = $1 ORDER BY name",
-        )
-        .bind(tenant_id)
-        .fetch_all(&self.pool)
-        .await?;
+        let built = query::build(filter, sort, ROLE_FILTER_FIELDS, 2)?;
+        let mut where_sql = String::from("tenant_id = $1");
+        if !built.where_sql.is_empty() {
+            where_sql.push_str(" AND ");
+            where_sql.push_str(&built.where_sql);
+        }
+        let order_sql = if built.order_sql.is_empty() {
+            " ORDER BY name".to_string()
+        } else {
+            built.order_sql
+        };
+        let sql = format!(
+            "SELECT id, name, uid, parent_role_id FROM roles WHERE {where_sql}{order_sql} LIMIT {limit} OFFSET {offset}"
+        );
+        let mut q = sqlx::query_as::<_, (Uuid, String, String, Option<Uuid>)>(&sql).bind(tenant_id);
+        for p in &built.params {
+            q = q.bind(p);
+        }
+        let rows = q.fetch_all(&self.pool).await?;
         Ok(rows)
     }
 
