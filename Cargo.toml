@@ -1,6 +1,6 @@
 [package]
 name = "authrs"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 description = "Multi-tenant authentication service"
 default-run = "authrs"
@@ -46,7 +46,7 @@ utoipa = { version = "5", features = ["chrono", "uuid", "openapi_extensions"] }
 
 # Observability
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 metrics = "0.21"
 metrics-exporter-prometheus = "0.13"
 

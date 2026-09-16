@@ -12,18 +12,13 @@
 //!   SEED_TENANT_ID=test SEED_TENANT_NAME=Test SEED_ADMIN_EMAIL=admin@example.com SEED_ADMIN_PASSWORD=secret cargo run --bin seed
 
 use authrs::{seed_run, SeedInput};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     dotenvy::dotenv().ok();
 
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
-        ))
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    let log_level = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
+    authrs::logging::init(&log_level);
 
     let database_url = std::env::var("DATABASE_URL").map_err(|_| "DATABASE_URL is required")?;
     authrs::db::ensure_database_exists(&database_url).await?;

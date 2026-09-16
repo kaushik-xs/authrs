@@ -1,20 +1,19 @@
 //! Authrs - Multi-tenant authentication service entrypoint.
 
 use authrs::api::state::AppState;
+use authrs::middleware::trace::trace_id_middleware;
 use authrs::routes;
 use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     dotenvy::dotenv().ok();
     let config = authrs::Config::from_env().expect("Invalid config");
 
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new(&config.log_level))
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    // JSON logs by default; every line carries `trace_id` from the request span.
+    // Set LOG_FORMAT=text (or pretty) for human-readable local logs.
+    authrs::logging::init(&config.log_level);
 
     authrs::db::ensure_database_exists(&config.database_url)
         .await
@@ -55,7 +54,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let app = routes::router().with_state(state).layer(cors);
+    // Trace span outermost: reads the incoming `traceparent` and puts `trace_id`
+    // on every log line for the request (empty when no valid header is passed).
+    let app = routes::router()
+        .with_state(state)
+        .layer(cors)
+        .layer(axum::middleware::from_fn(trace_id_middleware));
 
     let addr = format!("{}:{}", config.server_host, config.server_port)
         .parse::<SocketAddr>()
