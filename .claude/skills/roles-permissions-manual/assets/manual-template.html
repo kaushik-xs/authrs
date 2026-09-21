@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roles &amp; Permissions — Configuration Manual</title>
+<style>
+  :root{
+    --bg:#f7f8fb; --surface:#ffffff; --ink:#1c2230; --muted:#5b6472;
+    --line:#e6e9f0; --accent:#4f46e5; --accent-soft:#eef0fe;
+    --ok:#0f9d58; --warn:#b26a00; --warn-soft:#fff4e0; --block:#c0392b;
+    --code-bg:#f2f3f7; --shadow:0 1px 3px rgba(20,25,40,.06),0 8px 24px rgba(20,25,40,.05);
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 24px;display:grid;grid-template-columns:260px 1fr;gap:36px}
+  /* Sidebar TOC */
+  aside{position:sticky;top:0;align-self:start;height:100vh;overflow:auto;padding:28px 8px 40px}
+  aside .brand{font-weight:700;font-size:15px;letter-spacing:.02em;margin-bottom:4px}
+  aside .brand span{color:var(--accent)}
+  aside .sub{color:var(--muted);font-size:12.5px;margin-bottom:18px}
+  nav a{display:block;color:var(--muted);text-decoration:none;font-size:13.5px;padding:5px 10px;border-radius:8px;border-left:2px solid transparent}
+  nav a:hover{color:var(--ink);background:var(--surface)}
+  nav a.section{margin-top:10px;color:var(--ink);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.04em}
+  nav a.sub2{padding-left:22px;font-size:13px}
+  /* Main */
+  main{padding:40px 0 96px;min-width:0}
+  header.doc{background:linear-gradient(135deg,#4f46e5,#7c73ff);color:#fff;border-radius:16px;padding:34px 34px 30px;box-shadow:var(--shadow);margin-bottom:10px}
+  header.doc h1{margin:0 0 8px;font-size:30px;line-height:1.2}
+  header.doc p{margin:4px 0;opacity:.95;font-size:14.5px}
+  header.doc .pill{display:inline-block;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);padding:3px 10px;border-radius:999px;font-size:12.5px;margin-top:12px}
+  section{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:26px 30px;margin:22px 0;box-shadow:var(--shadow)}
+  section h2{margin:0 0 14px;font-size:22px;scroll-margin-top:20px}
+  section h3{margin:26px 0 10px;font-size:17px;color:var(--ink)}
+  p,li{color:#2a3140}
+  a{color:var(--accent)}
+  code{background:var(--code-bg);padding:1.5px 6px;border-radius:6px;font:13.5px/1.5 "SF Mono",ui-monospace,Menlo,Consolas,monospace;color:#3a3f66}
+  .flow{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;margin:8px 0 4px}
+  .flow .box{flex:1;min-width:150px;background:var(--accent-soft);border:1px solid #dfe1fb;border-radius:10px;padding:12px 14px}
+  .flow .box b{display:block;color:var(--accent);font-size:14px}
+  .flow .box small{color:var(--muted)}
+  .flow .arrow{display:flex;align-items:center;color:var(--accent);font-size:22px;font-weight:700}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:14.5px;overflow:hidden;border-radius:10px}
+  th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}
+  th{background:#f3f4fb;font-weight:600;color:#333a52}
+  tbody tr:nth-child(even){background:#fafbfe}
+  .lvl{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px}
+  .lvl.v{background:#e8f5ee;color:#0f7a43}
+  .lvl.e{background:#e9edff;color:#3f3fc0}
+  .lvl.a{background:#fbe9e7;color:#b3382b}
+  .callout{border-left:4px solid var(--accent);background:var(--accent-soft);padding:12px 16px;border-radius:0 10px 10px 0;margin:14px 0;font-size:14.5px}
+  .callout.warn{border-color:var(--warn);background:var(--warn-soft)}
+  .callout.tip{border-color:var(--ok);background:#eaf7ef}
+  .callout b{color:inherit}
+  .step{display:flex;gap:16px;margin:18px 0;align-items:flex-start}
+  .step .n{flex:0 0 34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+  .step .body{flex:1;min-width:0}
+  .step .body h4{margin:2px 0 6px;font-size:16px}
+  figure{margin:14px 0 4px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fbfbfe}
+  figure img{display:block;width:100%;height:auto}
+  figure .ph{display:flex;align-items:center;justify-content:center;min-height:220px;color:var(--muted);
+    background:repeating-linear-gradient(45deg,#f4f5fa,#f4f5fa 12px,#eef0f7 12px,#eef0f7 24px);
+    text-align:center;padding:24px;font-size:14px}
+  figure figcaption{padding:10px 14px;font-size:13px;color:var(--muted);border-top:1px solid var(--line);background:#fff}
+  .badge{display:inline-block;background:var(--accent-soft);color:var(--accent);border:1px solid #dfe1fb;border-radius:6px;padding:1px 7px;font-size:12.5px;font-weight:600}
+  .pkg-tag{font-size:12px;color:var(--muted)}
+  .top{font-size:12.5px}
+  hr{border:none;border-top:1px solid var(--line);margin:22px 0}
+  @media (max-width:900px){.wrap{grid-template-columns:1fr}aside{position:static;height:auto;overflow:visible}}
+  @media print{
+    aside{display:none}.wrap{grid-template-columns:1fr;max-width:none}
+    section,header.doc{box-shadow:none;break-inside:avoid}
+    body{background:#fff}
+  }
+  /* ---- Inline console mockups (self-contained, no images) ---- */
+  .shot{border:1px solid #20263a;border-radius:10px;overflow:hidden;background:#0e131f;color:#e6eaf3;
+    font:12px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  .shot .cap{height:20px;background:#37c07f;display:flex;align-items:center;justify-content:center;color:#08351f;font-size:10px;font-weight:700;letter-spacing:.08em}
+  .shot .app{display:flex;min-height:250px}
+  .shot .rail{width:40px;background:#0a0e18;border-right:1px solid #1b2233;display:flex;flex-direction:column;align-items:center;gap:12px;padding:12px 0;flex:0 0 40px}
+  .shot .rail i{width:18px;height:18px;border-radius:5px;background:#182036;display:block}
+  .shot .rail i.on{background:#3b3fc0}
+  .shot .side{width:130px;background:#0c1120;border-right:1px solid #1b2233;padding:12px 10px;flex:0 0 130px}
+  .shot .side h5{margin:0 0 10px;font-size:12px;color:#fff;font-weight:700}
+  .shot .side a{display:block;padding:6px 8px;border-radius:6px;color:#aeb8cc;margin-bottom:2px}
+  .shot .side a.on{background:#151c30;color:#fff}
+  .shot .main{flex:1;padding:16px 18px;min-width:0}
+  .shot .h{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .shot .h b{font-size:16px;color:#fff}
+  .shot .btns{display:flex;gap:6px}
+  .shot .btn{background:#3b3fc0;color:#fff;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600}
+  .shot .btn.ghost{background:#1a2136;color:#c7cfe0}
+  .shot .search{background:#141a2b;border:1px solid #232b42;border-radius:7px;padding:5px 9px;color:#7f8aa3;margin-bottom:10px}
+  .shot table{width:100%;border-collapse:collapse;font-size:11.5px;border-radius:0}
+  .shot th{background:#141a2b;color:#9aa5bd;text-align:left;padding:7px 9px;border:0;border-bottom:1px solid #212942;font-weight:600}
+  .shot td{padding:8px 9px;border:0;border-bottom:1px solid #171e30;color:#dfe4ef;vertical-align:middle}
+  .shot tbody tr:nth-child(even){background:#0c1120}
+  .shot .chip{display:inline-block;background:#161d31;border:1px solid #263153;color:#c3ccdf;border-radius:999px;padding:2px 8px;margin:2px 3px 2px 0;font-size:10.5px;white-space:nowrap}
+  .shot .chip .x{color:#6b7590;margin-left:4px}
+  .shot .more{display:inline-block;background:#22284a;color:#aab3cc;border-radius:5px;padding:1px 6px;font-size:10.5px}
+  .shot .field{margin-bottom:12px}
+  .shot .field label{display:block;color:#9aa5bd;margin-bottom:5px;font-size:11px}
+  .shot .inp{background:#0c1222;border:1px solid #232b42;border-radius:7px;padding:0 10px;height:34px;display:flex;align-items:center;justify-content:space-between;color:#eef1f7}
+  .shot .inp.ph{color:#6b7590}
+  .shot .inp.area{height:auto;min-height:40px;display:block;padding:8px 10px}
+  .shot .note{color:#7f8aa3;font-size:10.5px;margin-top:5px}
+  .shot .panel{background:#0c1120;border:1px solid #1b2233;border-radius:9px;padding:14px}
+  .shot .dlg{max-width:440px;margin:4px auto;background:#0f1526;border:1px solid #232b42;border-radius:10px;padding:14px}
+  .shot .dlg h4{margin:0 0 10px;color:#fff;font-size:13px;display:flex;justify-content:space-between}
+  .shot .list{background:#0c1222;border:1px solid #232b42;border-radius:8px;margin-top:6px}
+  .shot .list div{padding:7px 10px;border-bottom:1px solid #171e30;color:#dfe4ef}
+  .shot .list div.sel{background:#151c30;color:#fff}
+  .shot .rt{color:#7f8aa3}
+  figure .shotcap{padding:9px 13px;font-size:12.5px;color:var(--muted);background:#fff;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<aside>
+  <div class="brand"><span>regere</span> · IAM</div>
+  <div class="sub">Roles &amp; Permissions Manual</div>
+  <nav>
+    <a class="section" href="#overview">Concepts</a>
+    <a href="#overview">1 · The big picture</a>
+    <a href="#words">2 · The words we use</a>
+    <a href="#decided">3 · How access is decided</a>
+    <a href="#levels">4 · The three access levels</a>
+    <a href="#anatomy">5 · What a permission is</a>
+    <a href="#names">6 · Permission names</a>
+    <a href="#blocks">7 · Building blocks</a>
+    <a class="section" href="#packages">Packages</a>
+    <!-- GEN:navpackages START -->
+    <a class="sub2" href="#essentials">8.1 · Essentials</a>
+    <a class="sub2" href="#core">8.2 · Manufacturing Core</a>
+    <a class="sub2" href="#siemens">8.3 · Siemens</a>
+    <a class="sub2" href="#jobq">8.4 · Jobq</a>
+    <!-- GEN:navpackages END -->
+    <a class="section" href="#configure">How to configure</a>
+    <a href="#applies">9 · Who it applies to</a>
+    <a href="#conditions">10 · Optional conditions</a>
+    <a href="#configure">11 · Step-by-step (screens)</a>
+    <a href="#example-roles">12 · Example roles</a>
+    <a class="section" href="#best">Reference</a>
+    <a href="#best">13 · Best practices</a>
+    <a href="#quickref">14 · Quick reference</a>
+    <a href="#trouble">15 · Troubleshooting</a>
+    <a href="#reference-all">16 · Every block (V/E/A)</a>
+  </nav>
+</aside>
+
+<main>
+  <header class="doc">
+    <h1>Roles &amp; Permissions — Configuration Manual</h1>
+    <p>A plain-language guide for support and implementation teams. No code or JSON required.</p>
+    <p>Console: <b>launchpad-headless-dev.regere.ai</b></p>
+    <span class="pill">Packages: Manufacturing Essential · Manufacturing Core · Siemens · Jobq</span>
+  </header>
+
+  <!-- 1 -->
+  <section id="overview">
+    <h2>1 · The big picture</h2>
+    <p>Access is granted in a simple chain — read it left to right:</p>
+    <div class="flow">
+      <div class="box"><b>Permission</b><small>what can be done</small></div>
+      <div class="arrow">→</div>
+      <div class="box"><b>Role</b><small>a named bundle</small></div>
+      <div class="arrow">→</div>
+      <div class="box"><b>User / Group</b><small>the people who get it</small></div>
+    </div>
+    <ul>
+      <li>A <b>permission</b> says <i>what</i> someone may do (e.g. "view materials").</li>
+      <li>A <b>role</b> is a named bundle of permissions (e.g. "Dispatch Manager").</li>
+      <li>A <b>user</b> receives a role — directly, or by belonging to a <b>group</b> that has the role.</li>
+    </ul>
+    <div class="callout"><b>Golden rule:</b> never give a permission straight to a person. Put permissions into a role, then give the role to people. It stays tidy, reusable, and auditable.</div>
+  </section>
+
+  <!-- 2 -->
+  <section id="words">
+    <h2>2 · The words we use</h2>
+    <table>
+      <thead><tr><th>Term</th><th>Plain meaning</th></tr></thead>
+      <tbody>
+        <tr><td><b>Tenant</b></td><td>The customer's isolated workspace. Nothing is shared between tenants.</td></tr>
+        <tr><td><b>User</b></td><td>A person's membership inside one tenant. Roles are given to this membership.</td></tr>
+        <tr><td><b>Group</b></td><td>A set of users (a team/department). A role given to a group reaches every member.</td></tr>
+        <tr><td><b>Role</b></td><td>A named bundle of permissions. Can inherit from a <b>parent role</b>.</td></tr>
+        <tr><td><b>Package</b></td><td>A product area that ships entities, e.g. <i>Manufacturing Essential</i>, <i>Siemens</i>, <i>Jobq</i>.</td></tr>
+        <tr><td><b>Entity</b></td><td>A type of record inside a package, e.g. <i>Materials</i>, <i>Tickets</i>, <i>Projects</i>. Access is granted on entities.</td></tr>
+        <tr><td><b>Permission</b></td><td>A rule that allows (or blocks) a set of actions on one or more entities.</td></tr>
+        <tr><td><b>Action</b></td><td>One thing that can be done, e.g. view materials, create a ticket. The "permission name".</td></tr>
+        <tr><td><b>Access level</b></td><td>A convenient grouping of actions: <b>Viewer</b>, <b>Editor</b>, <b>Admin</b>.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 3 -->
+  <section id="decided">
+    <h2>3 · How access is decided</h2>
+    <p>When a person tries to do something, the system checks their roles and returns <b>Allow</b> or <b>Deny</b>. Two rules matter:</p>
+    <ol>
+      <li><b>Default is "No".</b> If nothing explicitly allows the action, it is blocked.</li>
+      <li><b>A block always wins.</b> If one rule allows and another blocks, the block takes priority. Use a block for firm exceptions (e.g. "everything on tickets <i>except</i> delete").</li>
+    </ol>
+  </section>
+
+  <!-- 4 -->
+  <section id="levels">
+    <h2>4 · The three access levels</h2>
+    <p>Almost everything is granted at one of three levels. Pick the lowest level that lets someone do their job.</p>
+    <table>
+      <thead><tr><th>Level</th><th>Can do</th><th>Cannot do</th><th>Give it to…</th></tr></thead>
+      <tbody>
+        <tr><td><span class="lvl v">Viewer</span></td><td>View / list records</td><td>Any change</td><td>People who only need to see data</td></tr>
+        <tr><td><span class="lvl e">Editor</span></td><td>View, Create, Edit, <b>Archive</b></td><td>Delete, Restore</td><td>Day-to-day operators</td></tr>
+        <tr><td><span class="lvl a">Admin</span></td><td>Everything incl. <b>Delete</b> &amp; <b>Restore</b></td><td>—</td><td>Owners of that data area</td></tr>
+      </tbody>
+    </table>
+    <div class="callout warn"><b>Note:</b> Editor can <i>archive</i> (hide) records but cannot permanently delete or restore them. Only <b>Admin</b> can delete and restore — this protects data from accidental loss.</div>
+  </section>
+
+  <!-- 5 -->
+  <section id="anatomy">
+    <h2>5 · What a permission is made of</h2>
+    <p>Think of a permission as a short form. You fill it in — no code required.</p>
+    <table>
+      <thead><tr><th>Field</th><th>What you put in it</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><b>Name</b></td><td>A short label</td><td><code>Manufacturing Essential - Materials Editor</code></td></tr>
+        <tr><td><b>Description</b></td><td>A sentence of purpose</td><td>Editor access to Materials</td></tr>
+        <tr><td><b>Effect</b></td><td>Allow or Block</td><td>Allow</td></tr>
+        <tr><td><b>Applies to</b></td><td>Who it covers (§9)</td><td>Everyone with this role</td></tr>
+        <tr><td><b>Actions</b></td><td>The things it permits (§6)</td><td>View, Create, Edit, Archive</td></tr>
+        <tr><td><b>Entities</b></td><td>What it applies to</td><td>The Materials entity</td></tr>
+        <tr><td><b>Conditions</b> <span class="pkg-tag">(optional)</span></td><td>Extra requirements (§10)</td><td>Only if signed in with MFA</td></tr>
+      </tbody>
+    </table>
+    <div class="callout tip"><b>Good news:</b> you rarely build these by hand — you'll mostly use the ready-made <a href="#blocks">building blocks</a>.</div>
+  </section>
+
+  <!-- 6 -->
+  <section id="names">
+    <h2>6 · Permission names — how access is named</h2>
+    <p>Behind each access level is a set of precise <b>action names</b>. You rarely type them, but support teams should recognise them.</p>
+    <div class="callout"><b>Naming rule:</b> action name = <b>verb + EntityName</b> (EntityName with no underscores, each word capitalised).<br>
+      e.g. entity <code>materials</code> → <code>getMaterials</code>; entity <code>bom_materials</code> → <code>getBomMaterials</code>.</div>
+    <table>
+      <thead><tr><th>Verb</th><th>Example (Materials)</th><th>Meaning</th><th>In which level</th></tr></thead>
+      <tbody>
+        <tr><td>get</td><td><code>getMaterials</code></td><td>View / list</td><td>Viewer, Editor, Admin</td></tr>
+        <tr><td>post</td><td><code>postMaterials</code></td><td>Create</td><td>Editor, Admin</td></tr>
+        <tr><td>patch</td><td><code>patchMaterials</code></td><td>Edit part of a record</td><td>Editor, Admin</td></tr>
+        <tr><td>put</td><td><code>putMaterials</code></td><td>Replace / full update</td><td>Editor, Admin</td></tr>
+        <tr><td>archive</td><td><code>archiveMaterials</code></td><td>Archive (soft-delete)</td><td>Editor, Admin</td></tr>
+        <tr><td>delete</td><td><code>deleteMaterials</code></td><td>Permanently delete</td><td>Admin only</td></tr>
+        <tr><td>unarchive</td><td><code>unarchiveMaterials</code></td><td>Restore an archived record</td><td>Admin only</td></tr>
+      </tbody>
+    </table>
+    <p><b>Custom actions</b> — some packages add special actions beyond the seven above. In this environment there is one: <span class="badge">reopenMilestoneTicket</span> (Manufacturing Essential) — lets a user reopen a closed milestone ticket. Custom actions are granted with their own dedicated permission.</p>
+  </section>
+
+  <!-- 7 -->
+  <section id="blocks">
+    <h2>7 · Ready-made permission building blocks</h2>
+    <p>Every package ships pre-built permissions so you don't assemble actions by hand. Two shapes:</p>
+    <table>
+      <thead><tr><th>Shape</th><th>Name pattern</th><th>What it covers</th></tr></thead>
+      <tbody>
+        <tr><td><b>Whole-package</b></td><td><code>&lt;Package&gt; - &lt;Level&gt;</code></td><td>That level across <b>all</b> entities. e.g. <i>Siemens - Viewer</i>, <i>Jobq - Admin</i></td></tr>
+        <tr><td><b>Per-entity</b></td><td><code>&lt;Package&gt; - &lt;Entity&gt; &lt;Level&gt;</code></td><td>That level for <b>one</b> entity. e.g. <i>Manufacturing Essential - Materials Editor</i></td></tr>
+      </tbody>
+    </table>
+    <p>Levels are always <span class="lvl v">Viewer</span> <span class="lvl e">Editor</span> <span class="lvl a">Admin</span>. When building a role, add the blocks it needs — mix whole-package and per-entity freely.</p>
+  </section>
+
+  <!-- 8 -->
+  <section id="packages">
+    <h2>8 · Packages &amp; entities</h2>
+    <p>This environment has <b>four packages</b>. Each entity supports the standard <b>Viewer / Editor / Admin</b> building blocks.</p>
+
+    <h3 id="essentials">8.1 · Manufacturing Essential <span class="pkg-tag">(Essentials)</span></h3>
+    <p>Shared master data and ticketing used across the platform.</p>
+    <table>
+      <thead><tr><th>Entity</th><th>What it holds</th></tr></thead>
+      <tbody>
+        <tr><td>Materials</td><td>Materials / items master data</td></tr>
+        <tr><td>Boms</td><td>Bill of Materials (headers)</td></tr>
+        <tr><td>Bom Materials</td><td>Material lines within a BOM</td></tr>
+        <tr><td>Products</td><td>Product master data</td></tr>
+        <tr><td>Equipments</td><td>Equipment and their locations</td></tr>
+        <tr><td>Locations</td><td>Sites and storage areas</td></tr>
+        <tr><td>Departments</td><td>Department master data</td></tr>
+        <tr><td>Shifts</td><td>Shift master data</td></tr>
+        <tr><td>Skills</td><td>Personnel skills master data</td></tr>
+        <tr><td>Users Profiles</td><td>Profile details for personnel</td></tr>
+        <tr><td>Organisations</td><td>Organisation master data</td></tr>
+        <tr><td>Customers</td><td>Customer master data</td></tr>
+        <tr><td>Events</td><td>Event records</td></tr>
+        <tr><td>Notifications</td><td>Notification records</td></tr>
+        <tr><td>Tickets</td><td>Execution &amp; logistics tickets</td></tr>
+        <tr><td>Ticket Comments</td><td>Comments on tickets</td></tr>
+        <tr><td>Ticket Attachments</td><td>Files attached to tickets</td></tr>
+        <tr><td>Ticket Statuses</td><td>Ticket status definitions</td></tr>
+        <tr><td>Tickets Audit</td><td>Audit trail for tickets (history)</td></tr>
+      </tbody>
+    </table>
+    <div class="callout"><b>Custom action:</b> <i>Manufacturing Essential - Custom - reopenMilestoneTicket</i> grants the <code>reopenMilestoneTicket</code> capability.<br><b>Whole-package blocks:</b> Manufacturing Essential - Viewer / Editor / Admin.</div>
+
+    <h3 id="core">8.2 · Manufacturing Core</h3>
+    <p>Execution and planning on top of the essentials.</p>
+    <table>
+      <thead><tr><th>Entity</th><th>What it holds</th></tr></thead>
+      <tbody>
+        <tr><td>Work Orders</td><td>Manufacturing work orders</td></tr>
+        <tr><td>Item Orders</td><td>Item-level orders</td></tr>
+        <tr><td>Processes</td><td>Process / workflow canvas definitions</td></tr>
+        <tr><td>Process Canvas Steps</td><td>Steps within a process canvas</td></tr>
+        <tr><td>Simulation Runs</td><td>Simulation run records</td></tr>
+      </tbody>
+    </table>
+    <div class="callout"><b>Whole-package blocks:</b> Manufacturing Core - Viewer / Editor / Admin.</div>
+
+    <h3 id="siemens">8.3 · Siemens</h3>
+    <p>Siemens Energy project, logistics and yard management.</p>
+    <table>
+      <thead><tr><th>Entity</th><th>What it holds</th></tr></thead>
+      <tbody>
+        <tr><td>Projects</td><td>Project master data</td></tr>
+        <tr><td>Project Journeys</td><td>Project journey records</td></tr>
+        <tr><td>Project Journeys Audit</td><td>Audit trail for project journeys</td></tr>
+        <tr><td>Project Journey Bills</td><td>Bills linked to project journeys</td></tr>
+        <tr><td>L1 Plannings</td><td>Level-1 plans</td></tr>
+        <tr><td>L1 Planning Configurations</td><td>Configuration for L1 planning</td></tr>
+        <tr><td>Loading Plans</td><td>Loading plans</td></tr>
+        <tr><td>Modules</td><td>Modules</td></tr>
+        <tr><td>Modules Family</td><td>Module families</td></tr>
+        <tr><td>Module Types</td><td>Module type definitions</td></tr>
+        <tr><td>Node Milestones</td><td>Milestones on nodes</td></tr>
+        <tr><td>Node Milestones Audit</td><td>Audit trail for node milestones</td></tr>
+        <tr><td>Milestone Calculations</td><td>Milestone calculation records</td></tr>
+        <tr><td>Milestone Dependents</td><td>Milestone dependency records</td></tr>
+        <tr><td>Notify Milestone Steps</td><td>Milestone notification steps</td></tr>
+        <tr><td>Notify Workflow Steps</td><td>Workflow notification steps</td></tr>
+        <tr><td>Workflow Canvas Steps</td><td>Steps in a workflow canvas</td></tr>
+        <tr><td>Workflow Dependent Steps</td><td>Dependent workflow steps</td></tr>
+        <tr><td>Workflow Step Calculations</td><td>Workflow step calculations</td></tr>
+        <tr><td>Transport Units</td><td>Transport units</td></tr>
+        <tr><td>Transport Units Audit</td><td>Audit trail for transport units</td></tr>
+        <tr><td>Tu Lineage</td><td>Transport-unit lineage</td></tr>
+        <tr><td>Tu Lineage Audit</td><td>Audit trail for TU lineage</td></tr>
+        <tr><td>Vehicles And Containers</td><td>Vehicles and containers</td></tr>
+        <tr><td>Gate Ledgers</td><td>Gate entry/exit ledgers</td></tr>
+        <tr><td>Yard Occupancy</td><td>Yard occupancy records</td></tr>
+        <tr><td>Pms Upload</td><td>PMS upload records</td></tr>
+      </tbody>
+    </table>
+    <div class="callout"><b>Whole-package blocks:</b> Siemens - Viewer / Editor / Admin.</div>
+
+    <h3 id="jobq">8.4 · Jobq</h3>
+    <p>Background job and task queue.</p>
+    <table>
+      <thead><tr><th>Entity</th><th>What it holds</th></tr></thead>
+      <tbody>
+        <tr><td>Job</td><td>Jobs</td></tr>
+        <tr><td>Job Task</td><td>Tasks within a job</td></tr>
+        <tr><td>Job Event</td><td>Events raised during a job</td></tr>
+      </tbody>
+    </table>
+    <div class="callout"><b>Whole-package blocks:</b> Jobq - Viewer / Editor / Admin.</div>
+  </section>
+
+  <!-- 9 -->
+  <section id="applies">
+    <h2>9 · Who a permission applies to</h2>
+    <table>
+      <thead><tr><th>Setting</th><th>Meaning</th><th>When to use</th></tr></thead>
+      <tbody>
+        <tr><td><b>Everyone with this role</b> <span class="badge">recommended</span></td><td>Works for whoever holds the role it's attached to</td><td>Almost always. Control access by which role you attach it to.</td></tr>
+        <tr><td>A specific role</td><td>Only members of a named role</td><td>Rare.</td></tr>
+        <tr><td>A specific user</td><td>Only one named person</td><td>Exceptions and one-offs.</td></tr>
+      </tbody>
+    </table>
+    <div class="callout tip">The ready-made building blocks already use <b>Everyone with this role</b>, so access is controlled purely by which role you add them to.</div>
+  </section>
+
+  <!-- 10 -->
+  <section id="conditions">
+    <h2>10 · Optional conditions</h2>
+    <p>Conditions add an extra requirement that must be true for a permission to apply.</p>
+    <table>
+      <thead><tr><th>Condition</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td>Requires <b>MFA verified</b></td><td>The action only works if the user completed multi-factor sign-in.</td></tr>
+        <tr><td>Restricted to a <b>tenant</b></td><td>The action only applies within a specific workspace.</td></tr>
+      </tbody>
+    </table>
+    <p>Use conditions to gate sensitive actions such as <i>delete</i> or <i>reopen</i>.</p>
+  </section>
+
+  <!-- 11 CONFIGURE with screenshots -->
+  <section id="configure">
+    <h2>11 · Setting up access — step by step</h2>
+    <p>This walkthrough follows the real console screens. Open <b>IAM</b> from the left sidebar — it has three areas: <b>Users</b>, <b>Roles</b> and <b>User Group</b>. There is no separate "Permissions" area — permissions are attached <i>inside</i> a role.</p>
+
+    <p class="pkg-tag">The panels below are faithful representations of the actual console screens (real role and building-block names).</p>
+
+    <div class="step"><div class="n">1</div><div class="body">
+      <h4>Open IAM</h4>
+      <p>Click <b>IAM</b> in the left sidebar. The fly-out shows <b>Users</b>, <b>Roles</b> and <b>User Group</b>.</p>
+      <figure>
+        <div class="shot"><div class="cap">CTC</div><div class="app">
+          <div class="rail"><i></i><i></i><i></i><i></i><i class="on"></i></div>
+          <div class="side"><h5>IAM</h5><a>👥 Users</a><a class="on">🛡 Roles</a><a>🗂 User Group</a></div>
+          <div class="main"><div class="h"><b>Home</b><div class="search">Search Pages/Modules ⌘K</div></div>
+            <div class="panel">Project Journey&nbsp;&nbsp;·&nbsp;&nbsp;My Milestones&nbsp;&nbsp;·&nbsp;&nbsp;Team Milestones</div></div>
+        </div></div>
+        <figcaption class="shotcap">The IAM menu — Users · Roles · User Group.</figcaption>
+      </figure>
+    </div></div>
+
+    <div class="step"><div class="n">2</div><div class="body">
+      <h4>Review existing roles</h4>
+      <p>Open <b>IAM → Roles</b>. Each row shows the <b>Access Role</b>, what it <b>Inherits From</b> (its parent), and its attached <b>Permissions</b> as chips. Use <b>List</b> or <b>Tree</b> view.</p>
+      <figure>
+        <div class="shot"><div class="cap">CTC</div><div class="app">
+          <div class="rail"><i></i><i></i><i></i><i></i><i class="on"></i></div>
+          <div class="main">
+            <div class="h"><b>Roles</b><div class="btns"><span class="btn ghost">List</span><span class="btn ghost">Tree</span><span class="btn">+ Create</span></div></div>
+            <div class="search">Search roles…</div>
+            <table>
+              <thead><tr><th>Access Role</th><th>Inherits From</th><th>Permissions</th></tr></thead>
+              <tbody>
+                <tr><td>Commercial Team</td><td class="rt">—</td><td><span class="chip">Manufacturing Essential - Departments Viewer</span><span class="chip">Events Viewer</span> <span class="more">+13</span></td></tr>
+                <tr><td>Dispatch Lead</td><td class="rt">—</td><td><span class="chip">Manufacturing Essential - Tickets Editor</span> <span class="more">+15</span></td></tr>
+                <tr><td>Dispatch Manager</td><td class="rt">—</td><td><span class="chip">Siemens - Vehicles And Containers Admin</span> <span class="more">+17</span></td></tr>
+                <tr><td>Head of Department</td><td>Dispatch Manager</td><td class="rt">None (inherited)</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div></div>
+        <figcaption class="shotcap">The Roles list — real roles with their permission building blocks.</figcaption>
+      </figure>
+    </div></div>
+
+    <div class="step"><div class="n">3</div><div class="body">
+      <h4>Create the role</h4>
+      <p>Click <b>+ Create</b>. Enter a unique <b>Role name</b> and, optionally, a <b>Parent role</b> — "the new role inherits all permissions from its parent (and the parent's ancestors)." Click <b>Create role</b>. (Permissions are added next.)</p>
+      <figure>
+        <div class="shot"><div class="cap">CTC</div><div class="app">
+          <div class="rail"><i></i><i></i><i></i><i></i><i class="on"></i></div>
+          <div class="main">
+            <div class="h"><b>Create role</b></div>
+            <div class="panel">
+              <div class="field"><label>Role name *</label><div class="inp ph">Unique role name</div></div>
+              <div class="field"><label>Parent role</label><div class="inp ph">Select Parent Role ▾</div>
+                <div class="note">The new role inherits all permissions from its parent (and the parent's ancestors).</div></div>
+              <div class="btns" style="justify-content:flex-end"><span class="btn ghost">Cancel</span><span class="btn">Create role</span></div>
+            </div>
+          </div>
+        </div></div>
+        <figcaption class="shotcap">Creating a role, with an optional parent for inheritance.</figcaption>
+      </figure>
+    </div></div>
+
+    <div class="step"><div class="n">4</div><div class="body">
+      <h4>Attach permission building blocks</h4>
+      <p>Open the role to bring up its <b>Permissions</b> dialog. Under <b>Attached Permissions</b>, the current building blocks appear as chips (click <b>×</b> to detach). Add more from the picker, then <b>Save</b>.</p>
+      <figure>
+        <div class="shot"><div class="cap">CTC</div>
+          <div class="dlg">
+            <h4>Permissions — Commercial Team <span class="rt">×</span></h4>
+            <div class="field"><label>Parent role</label><div class="inp ph">Select Parent Role ▾</div></div>
+            <label style="color:#9aa5bd;font-size:11px">Attached Permissions</label>
+            <div class="panel" style="margin-top:6px">
+              <span class="chip">Manufacturing Essential - Departments Viewer <span class="x">×</span></span>
+              <span class="chip">Manufacturing Essential - Events Viewer <span class="x">×</span></span>
+              <span class="chip">Manufacturing Essential - Notifications Viewer <span class="x">×</span></span>
+              <span class="chip">Manufacturing Essential - Shifts Viewer <span class="x">×</span></span>
+              <span class="chip">Manufacturing Essential - Ticket Attachments Editor <span class="x">×</span></span>
+            </div>
+            <div class="note">Type to search all permissions. Removing a permission detaches it on save.</div>
+            <div class="btns" style="justify-content:flex-end;margin-top:10px"><span class="btn ghost">Cancel</span><span class="btn">Save</span></div>
+          </div>
+        </div>
+        <figcaption class="shotcap">A role's Attached Permissions (building-block chips).</figcaption>
+      </figure>
+    </div></div>
+
+    <div class="step"><div class="n">5</div><div class="body">
+      <h4>Pick the blocks from the list</h4>
+      <p>Type to search, or scroll the picker. Blocks are named <code>&lt;Package&gt; - &lt;Level&gt;</code> (whole package) or <code>&lt;Package&gt; - &lt;Entity&gt; &lt;Level&gt;</code> (one entity) — e.g. <i>Jobq - Admin</i>, <i>Jobq - Job Editor</i>. Selecting one attaches it directly to the role.</p>
+      <figure>
+        <div class="shot"><div class="cap">CTC</div>
+          <div class="dlg">
+            <h4>Permissions — Commercial Team <span class="rt">×</span></h4>
+            <div class="inp ph">Type to search all permissions… ▾</div>
+            <div class="list">
+              <div class="sel">Jobq - Admin</div>
+              <div>Jobq - Editor</div>
+              <div>Jobq - Job Admin</div>
+              <div>Jobq - Job Editor</div>
+              <div>Jobq - Job Event Admin</div>
+            </div>
+          </div>
+        </div>
+        <figcaption class="shotcap">The building-block picker (block names exactly as in §16).</figcaption>
+      </figure>
+    </div></div>
+
+    <div class="step"><div class="n">6</div><div class="body">
+      <h4>Give the role to people — option A: a user</h4>
+      <p>Open <b>IAM → Users</b>, open the user, and add the role under their roles. Use this for individuals. (Create users here, or <b>Bulk Upload</b>.)</p>
+      <figure>
+        <div class="shot"><div class="cap">CTC</div><div class="app">
+          <div class="rail"><i></i><i></i><i></i><i></i><i class="on"></i></div>
+          <div class="main">
+            <div class="h"><b>Users</b><div class="btns"><span class="btn ghost">⭱ Bulk Upload</span><span class="btn">+ Create</span></div></div>
+            <div class="search">Search users by name, email, role…</div>
+            <table>
+              <thead><tr><th>Name</th><th>Contact</th><th>Title</th><th>Department</th></tr></thead>
+              <tbody>
+                <tr><td>Asha R</td><td class="rt">asha.r@example.com</td><td class="rt">—</td><td>Planning</td></tr>
+                <tr><td>Ravi K</td><td class="rt">ravi.k@example.com</td><td>Engineer</td><td>Mechanical</td></tr>
+                <tr><td>Meera S</td><td class="rt">meera.s@example.com</td><td class="rt">—</td><td>Dispatch</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div></div>
+        <figcaption class="shotcap">The Users list (names illustrative). Open a user to assign roles.</figcaption>
+      </figure>
+    </div></div>
+
+    <div class="step"><div class="n">7</div><div class="body">
+      <h4>Give the role to people — option B: a group</h4>
+      <p>Open <b>IAM → User Group</b>, click the <b>edit</b> (pencil) on a group, and add roles under <b>Roles for this group</b>. "All current and future members inherit roles assigned to this group" — the best way to manage teams.</p>
+      <figure>
+        <div class="shot"><div class="cap">CTC</div><div class="app">
+          <div class="rail"><i></i><i></i><i></i><i></i><i class="on"></i></div>
+          <div class="main">
+            <div class="h"><b>User Group</b><div class="btns"><span class="btn">+ Create</span></div></div>
+            <div class="search">Search user groups…</div>
+            <table>
+              <thead><tr><th>Group name</th><th>Description</th><th>Actions</th></tr></thead>
+              <tbody>
+                <tr><td>ENGG - Engineering</td><td class="rt">—</td><td class="rt">✎&nbsp;&nbsp;🗑</td></tr>
+                <tr><td>FENG - Factory Engineering</td><td class="rt">—</td><td class="rt">✎&nbsp;&nbsp;🗑</td></tr>
+                <tr><td>HOD - Head of the department</td><td class="rt">—</td><td class="rt">✎&nbsp;&nbsp;🗑</td></tr>
+                <tr><td>PLANNING - Planning</td><td class="rt">—</td><td class="rt">✎&nbsp;&nbsp;🗑</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div></div>
+        <figcaption class="shotcap">The User Group list — click the pencil to edit a group.</figcaption>
+      </figure>
+      <figure>
+        <div class="shot"><div class="cap">CTC</div><div class="app">
+          <div class="rail"><i></i><i></i><i></i><i></i><i class="on"></i></div>
+          <div class="main">
+            <div class="h"><b>Edit user group</b></div>
+            <div class="panel" style="margin-bottom:12px">
+              <div class="field"><label>User group name</label><div class="inp">ENGG - Engineering</div></div>
+              <div class="field"><label>Group uid</label><div class="inp rt">engg_engineering</div></div>
+              <div class="field" style="margin:0"><label>User group description</label><div class="inp ph area" style="min-height:44px"></div></div>
+            </div>
+            <div class="panel">
+              <div style="color:#fff;font-weight:600;margin-bottom:4px">Roles for this group</div>
+              <div class="note" style="margin:0 0 8px">All current and future members inherit roles assigned to this group.</div>
+              <div class="inp ph">Select Roles ▾</div>
+            </div>
+          </div>
+        </div></div>
+        <figcaption class="shotcap">Assigning roles to a group — every member inherits them.</figcaption>
+      </figure>
+    </div></div>
+
+    <div class="callout tip"><b>After any change,</b> have the affected people sign out and back in so their session picks up the new access.</div>
+  </section>
+
+  <!-- 12 -->
+  <section id="example-roles">
+    <h2>12 · Example roles from this environment</h2>
+    <p>These real roles show how building blocks combine. Use them as templates.</p>
+    <table>
+      <thead><tr><th>Role</th><th>Inherits from</th><th>Rough shape</th></tr></thead>
+      <tbody>
+        <tr><td><b>Super Admin</b></td><td>—</td><td>Admin on every package + the reopen custom action.</td></tr>
+        <tr><td><b>SEED Admin</b></td><td>—</td><td>Broad admin/editor across packages for setup.</td></tr>
+        <tr><td><b>Project Manager</b></td><td>—</td><td>Editor on Siemens project &amp; journey entities, viewer on supporting data.</td></tr>
+        <tr><td><b>Dispatch Manager</b></td><td>—</td><td>Editor on tickets, transport units, yard, loading plans; admin on vehicles &amp; containers.</td></tr>
+        <tr><td><b>Head of Department</b></td><td>Dispatch Manager</td><td>Everything Dispatch Manager has, via inheritance.</td></tr>
+        <tr><td><b>Dispatch Lead</b></td><td>—</td><td>Editor on dispatch/logistics entities.</td></tr>
+        <tr><td><b>Planner</b></td><td>—</td><td>Editor on planning entities, viewers on the rest.</td></tr>
+        <tr><td><b>Commercial Team</b></td><td>—</td><td>Editor on tickets &amp; transport, viewers on master data.</td></tr>
+        <tr><td><b>Logistics Partner (3P)</b></td><td>—</td><td>Scoped access for an external logistics partner.</td></tr>
+        <tr><td><b>Quality Engineer</b></td><td>Logistics Partner (3P)</td><td>Inherits the 3P access set.</td></tr>
+        <tr><td><b>Security Team</b></td><td>—</td><td>Viewer on events/notifications/shifts/vehicles; editor on gate ledgers.</td></tr>
+      </tbody>
+    </table>
+    <div class="callout"><b>Worked example — Super Admin =</b> Jobq - Admin + Manufacturing Core - Admin + Manufacturing Essential - Admin + Manufacturing Essential - Custom - reopenMilestoneTicket + Siemens - Admin.</div>
+    <div class="callout"><b>Worked example — Security Team =</b> Manufacturing Essential - Events Viewer + Notifications Viewer + Shifts Viewer + Siemens - Gate Ledgers Editor + Vehicles And Containers Viewer.</div>
+    <div class="callout tip"><b>Tip:</b> use a <b>parent role</b> when one role is "everything that role has, plus more" — <i>Head of Department</i> simply inherits <i>Dispatch Manager</i>.</div>
+  </section>
+
+  <!-- 13 -->
+  <section id="best">
+    <h2>13 · Best practices</h2>
+    <ul>
+      <li><b>Grant through roles, not individuals.</b> Keep "Applies to" as <i>Everyone with this role</i>.</li>
+      <li><b>Prefer the ready-made building blocks</b> over hand-built permissions.</li>
+      <li><b>Least privilege.</b> Start from Viewer; move to Editor/Admin only where needed.</li>
+      <li><b>Use whole-package blocks sparingly</b> — mostly for admins. Everyday roles should list specific entities.</li>
+      <li><b>Use groups for teams.</b> Onboarding becomes "add the person to the group".</li>
+      <li><b>Reserve Admin (delete/restore) for data owners.</b> Editors can already archive.</li>
+      <li><b>Use a parent role</b> to avoid repeating a big permission list.</li>
+      <li><b>Always run the permission check</b> after wiring up a role.</li>
+    </ul>
+  </section>
+
+  <!-- 14 -->
+  <section id="quickref">
+    <h2>14 · Quick reference</h2>
+    <table>
+      <tbody>
+        <tr><th>Access chain</th><td>Permission → Role → User / Group</td></tr>
+        <tr><th>Access levels</th><td><span class="lvl v">Viewer</span> view · <span class="lvl e">Editor</span> view, create, edit, archive · <span class="lvl a">Admin</span> all incl. delete &amp; restore</td></tr>
+        <tr><th>Building block names</th><td><code>&lt;Package&gt; - &lt;Level&gt;</code> (all entities) · <code>&lt;Package&gt; - &lt;Entity&gt; &lt;Level&gt;</code> (one entity)</td></tr>
+        <tr><th>Packages</th><td>Manufacturing Essential · Manufacturing Core · Siemens · Jobq</td></tr>
+        <tr><th>Action name rule</th><td>verb + EntityName (e.g. <code>getMaterials</code>)</td></tr>
+        <tr><th>Custom action here</th><td><code>reopenMilestoneTicket</code> (Manufacturing Essential)</td></tr>
+        <tr><th>Effect</th><td>Allow · Block <i>(block always wins)</i></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 15 -->
+  <section id="trouble">
+    <h2>15 · Troubleshooting</h2>
+    <table>
+      <thead><tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr></thead>
+      <tbody>
+        <tr><td>User can't do something they should</td><td>The block wasn't added, or the role isn't assigned</td><td>Check the role has the right entity + level, and the user/group holds the role.</td></tr>
+        <tr><td>User can view but not edit</td><td>They only have a <b>Viewer</b> block</td><td>Add the <b>Editor</b> block for that entity.</td></tr>
+        <tr><td>User can edit but not delete/restore</td><td>Editor can't delete; that's <b>Admin</b></td><td>Add the <b>Admin</b> block for that entity.</td></tr>
+        <tr><td>Still can't after granting</td><td>A <b>Block</b> permission is overriding it</td><td>Look for a Block rule on that action; blocks always win.</td></tr>
+        <tr><td>Access changed but user unaffected</td><td>Their session predates the change</td><td>Have them sign out and back in.</td></tr>
+        <tr><td>Right role, still denied</td><td>A <b>condition</b> isn't met (e.g. MFA)</td><td>Check the permission's conditions (§10).</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 16 REFERENCE: every building block -->
+  <section id="reference-all">
+    <h2>16 · Building-block reference — every Viewer / Editor / Admin</h2>
+    <div class="callout"><b>How to read this:</b> each row is one entity. The block name is the base below with a level appended — <span class="lvl v">Viewer</span> <span class="lvl e">Editor</span> <span class="lvl a">Admin</span>. So the Materials row gives you three real blocks: <code>Manufacturing Essential - Materials Viewer</code>, <code>… Editor</code>, <code>… Admin</code>.</div>
+    <table>
+      <thead><tr><th>Level</th><th>What it gives (any entity)</th></tr></thead>
+      <tbody>
+        <tr><td><span class="lvl v">Viewer</span></td><td>View / list records only.</td></tr>
+        <tr><td><span class="lvl e">Editor</span></td><td>Create, edit and archive records (no delete/restore).</td></tr>
+        <tr><td><span class="lvl a">Admin</span></td><td>Full control — create, edit, archive, <b>delete</b> and <b>restore</b>.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Manufacturing Essential <span class="pkg-tag">(prefix: <code>Manufacturing Essential -</code>)</span></h3>
+    <table>
+      <thead><tr><th>Block name (append Viewer / Editor / Admin)</th><th>Controls…</th></tr></thead>
+      <tbody>
+        <tr><td><code>Manufacturing Essential - Materials</code></td><td>Materials / items master data</td></tr>
+        <tr><td><code>Manufacturing Essential - Boms</code></td><td>Bill of Materials headers</td></tr>
+        <tr><td><code>Manufacturing Essential - Bom Materials</code></td><td>Material lines within a BOM</td></tr>
+        <tr><td><code>Manufacturing Essential - Products</code></td><td>Product master data</td></tr>
+        <tr><td><code>Manufacturing Essential - Equipments</code></td><td>Equipment and their locations</td></tr>
+        <tr><td><code>Manufacturing Essential - Locations</code></td><td>Sites and storage areas</td></tr>
+        <tr><td><code>Manufacturing Essential - Departments</code></td><td>Department master data</td></tr>
+        <tr><td><code>Manufacturing Essential - Shifts</code></td><td>Shift master data</td></tr>
+        <tr><td><code>Manufacturing Essential - Skills</code></td><td>Personnel skills master data</td></tr>
+        <tr><td><code>Manufacturing Essential - Users Profiles</code></td><td>Personnel profile details</td></tr>
+        <tr><td><code>Manufacturing Essential - Organisations</code></td><td>Organisation master data</td></tr>
+        <tr><td><code>Manufacturing Essential - Customers</code></td><td>Customer master data</td></tr>
+        <tr><td><code>Manufacturing Essential - Events</code></td><td>Event records</td></tr>
+        <tr><td><code>Manufacturing Essential - Notifications</code></td><td>Notification records</td></tr>
+        <tr><td><code>Manufacturing Essential - Tickets</code></td><td>Execution &amp; logistics tickets</td></tr>
+        <tr><td><code>Manufacturing Essential - Ticket Comments</code></td><td>Comments on tickets</td></tr>
+        <tr><td><code>Manufacturing Essential - Ticket Attachments</code></td><td>Files attached to tickets</td></tr>
+        <tr><td><code>Manufacturing Essential - Ticket Statuses</code></td><td>Ticket status definitions</td></tr>
+        <tr><td><code>Manufacturing Essential - Tickets Audit</code></td><td>Ticket change history (audit)</td></tr>
+      </tbody>
+    </table>
+    <p><b>Whole package:</b> <code>Manufacturing Essential - Viewer / Editor / Admin</code> — that level across <i>all</i> the entities above.<br>
+    <b>Custom:</b> <code>Manufacturing Essential - Custom - reopenMilestoneTicket</code> — lets the holder reopen a closed milestone ticket.</p>
+
+    <h3>Manufacturing Core <span class="pkg-tag">(prefix: <code>Manufacturing Core -</code>)</span></h3>
+    <table>
+      <thead><tr><th>Block name (append Viewer / Editor / Admin)</th><th>Controls…</th></tr></thead>
+      <tbody>
+        <tr><td><code>Manufacturing Core - Work Orders</code></td><td>Manufacturing work orders</td></tr>
+        <tr><td><code>Manufacturing Core - Item Orders</code></td><td>Item-level orders</td></tr>
+        <tr><td><code>Manufacturing Core - Processes</code></td><td>Process / workflow canvas definitions</td></tr>
+        <tr><td><code>Manufacturing Core - Process Canvas Steps</code></td><td>Steps within a process canvas</td></tr>
+        <tr><td><code>Manufacturing Core - Simulation Runs</code></td><td>Simulation run records</td></tr>
+      </tbody>
+    </table>
+    <p><b>Whole package:</b> <code>Manufacturing Core - Viewer / Editor / Admin</code>.</p>
+
+    <h3>Siemens <span class="pkg-tag">(prefix: <code>Siemens -</code>)</span></h3>
+    <table>
+      <thead><tr><th>Block name (append Viewer / Editor / Admin)</th><th>Controls…</th></tr></thead>
+      <tbody>
+        <tr><td><code>Siemens - Projects</code></td><td>Project master data</td></tr>
+        <tr><td><code>Siemens - Project Journeys</code></td><td>Project journey records</td></tr>
+        <tr><td><code>Siemens - Project Journeys Audit</code></td><td>Project journey history (audit)</td></tr>
+        <tr><td><code>Siemens - Project Journey Bills</code></td><td>Bills linked to project journeys</td></tr>
+        <tr><td><code>Siemens - L1 Plannings</code></td><td>Level-1 plans</td></tr>
+        <tr><td><code>Siemens - L1 Planning Configurations</code></td><td>Configuration for L1 planning</td></tr>
+        <tr><td><code>Siemens - Loading Plans</code></td><td>Loading plans</td></tr>
+        <tr><td><code>Siemens - Modules</code></td><td>Modules</td></tr>
+        <tr><td><code>Siemens - Modules Family</code></td><td>Module families</td></tr>
+        <tr><td><code>Siemens - Module Types</code></td><td>Module type definitions</td></tr>
+        <tr><td><code>Siemens - Node Milestones</code></td><td>Milestones on nodes</td></tr>
+        <tr><td><code>Siemens - Node Milestones Audit</code></td><td>Node milestone history (audit)</td></tr>
+        <tr><td><code>Siemens - Milestone Calculations</code></td><td>Milestone calculation records</td></tr>
+        <tr><td><code>Siemens - Milestone Dependents</code></td><td>Milestone dependency records</td></tr>
+        <tr><td><code>Siemens - Notify Milestone Steps</code></td><td>Milestone notification steps</td></tr>
+        <tr><td><code>Siemens - Notify Workflow Steps</code></td><td>Workflow notification steps</td></tr>
+        <tr><td><code>Siemens - Workflow Canvas Steps</code></td><td>Steps in a workflow canvas</td></tr>
+        <tr><td><code>Siemens - Workflow Dependent Steps</code></td><td>Dependent workflow steps</td></tr>
+        <tr><td><code>Siemens - Workflow Step Calculations</code></td><td>Workflow step calculations</td></tr>
+        <tr><td><code>Siemens - Transport Units</code></td><td>Transport units</td></tr>
+        <tr><td><code>Siemens - Transport Units Audit</code></td><td>Transport unit history (audit)</td></tr>
+        <tr><td><code>Siemens - Tu Lineage</code></td><td>Transport-unit lineage</td></tr>
+        <tr><td><code>Siemens - Tu Lineage Audit</code></td><td>TU lineage history (audit)</td></tr>
+        <tr><td><code>Siemens - Vehicles And Containers</code></td><td>Vehicles and containers</td></tr>
+        <tr><td><code>Siemens - Gate Ledgers</code></td><td>Gate entry/exit ledgers</td></tr>
+        <tr><td><code>Siemens - Yard Occupancy</code></td><td>Yard occupancy records</td></tr>
+        <tr><td><code>Siemens - Pms Upload</code></td><td>PMS upload records</td></tr>
+      </tbody>
+    </table>
+    <p><b>Whole package:</b> <code>Siemens - Viewer / Editor / Admin</code>.</p>
+
+    <h3>Jobq <span class="pkg-tag">(prefix: <code>Jobq -</code>)</span></h3>
+    <table>
+      <thead><tr><th>Block name (append Viewer / Editor / Admin)</th><th>Controls…</th></tr></thead>
+      <tbody>
+        <tr><td><code>Jobq - Job</code></td><td>Jobs</td></tr>
+        <tr><td><code>Jobq - Job Task</code></td><td>Tasks within a job</td></tr>
+        <tr><td><code>Jobq - Job Event</code></td><td>Events raised during a job</td></tr>
+      </tbody>
+    </table>
+    <p><b>Whole package:</b> <code>Jobq - Viewer / Editor / Admin</code>.</p>
+    <p class="top"><a href="#table-of-contents-none">&nbsp;</a></p>
+  </section>
+
+  <p class="pkg-tag" style="text-align:center;margin-top:26px">Regere IAM · Roles &amp; Permissions Manual · for support &amp; implementation teams</p>
+</main>
+</div>
+
+<script>
+  // Placeholder builder for screenshots not yet added.
+  function ph(text){
+    var d=document.createElement('div');
+    d.className='ph';
+    d.innerHTML='<div>🖼️ <b>Screenshot</b><br>'+text+'</div>';
+    return d;
+  }
+</script>
+</body>
+</html>
