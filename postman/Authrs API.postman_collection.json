@@ -1196,6 +1196,32 @@
           }
         },
         {
+          "name": "Update group",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "{{tenantId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/groups/{{groupId}}",
+            "description": "Partially update a group. Omitted fields are unchanged; \"description\": null clears it. The uid is not changed on rename.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Platform Engineering\",\n  \"description\": \"Platform and infra engineers\"\n}"
+            }
+          }
+        },
+        {
           "name": "Delete group",
           "request": {
             "method": "DELETE",

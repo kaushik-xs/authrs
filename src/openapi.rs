@@ -635,6 +635,26 @@ pub fn spec() -> utoipa::openapi::OpenApi {
         .path(
             "/admin/groups/{group_id}",
             PathItem::new(
+                HttpMethod::Patch,
+                OperationBuilder::new()
+                    .summary(Some("Update group"))
+                    .description(Some(
+                        "Requires admin. Partial update. Body: name?, description?. Omitted fields are \
+                         unchanged; description: null clears it. The group's uid is not changed on rename.",
+                    ))
+                    .parameter(tenant_id_param())
+                    .parameter(path_param("group_id", "Group UUID"))
+                    .request_body(json_body(
+                        ObjectBuilder::new()
+                            .property("name", ObjectBuilder::new().schema_type(SchemaType::new(Type::String)))
+                            .property("description", ObjectBuilder::new().schema_type(SchemaType::new(Type::String))),
+                    ))
+                    .build(),
+            ),
+        )
+        .path(
+            "/admin/groups/{group_id}",
+            PathItem::new(
                 HttpMethod::Delete,
                 OperationBuilder::new()
                     .summary(Some("Delete group"))

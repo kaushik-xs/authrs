@@ -53,6 +53,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/groups", post(admin_create_group))
         .route("/groups", get(admin_list_groups))
         .route("/groups/:group_id", get(admin_get_group))
+        .route("/groups/:group_id", patch(admin_update_group))
         .route("/groups/:group_id", delete(admin_delete_group))
         .route("/groups/:group_id/users", post(admin_add_user_to_group))
         .route("/groups/:group_id/users", get(admin_list_group_members))
@@ -548,6 +549,25 @@ struct CreateGroupBody {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct UpdateGroupBody {
+    #[serde(default)]
+    name: Option<String>,
+    /// Absent = unchanged, `null` = clear, string = set.
+    #[serde(default, deserialize_with = "deserialize_some")]
+    description: Option<Option<String>>,
+}
+
+/// Distinguishes an explicit `null` (`Some(None)`) from an absent field (`None`, via `default`).
+fn deserialize_some<'de, T, D>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    T::deserialize(deserializer).map(Some)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AddUserToGroupBody {
     user_id: Uuid,
 }
@@ -604,6 +624,28 @@ async fn admin_get_group(
         .auth_service
         .groups_repo()
         .get(&tenant_id.0, group_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Group not found".to_string()))?;
+    Ok(Json(
+        serde_json::json!({ "id": group_id, "name": name, "uid": uid, "description": desc }),
+    ))
+}
+
+async fn admin_update_group(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Path(group_id): Path<Uuid>,
+    Json(body): Json<UpdateGroupBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let (name, uid, desc) = state
+        .auth_service
+        .groups_repo()
+        .update(
+            &tenant_id.0,
+            group_id,
+            body.name.as_deref(),
+            body.description.as_ref().map(|d| d.as_deref()),
+        )
         .await?
         .ok_or_else(|| AppError::NotFound("Group not found".to_string()))?;
     Ok(Json(

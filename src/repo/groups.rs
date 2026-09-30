@@ -114,6 +114,56 @@ impl GroupsRepo {
         Ok(row)
     }
 
+    /// Partially update a group. `name: None` leaves the name unchanged; `description: None`
+    /// leaves it unchanged, `Some(None)` clears it. The `uid` is never changed on rename, since
+    /// Cedar policies and entity hierarchies reference groups by uid.
+    /// Returns the updated (name, uid, description), or `None` if the group doesn't exist.
+    pub async fn update(
+        &self,
+        tenant_id: &str,
+        group_id: Uuid,
+        name: Option<&str>,
+        description: Option<Option<&str>>,
+    ) -> Result<Option<(String, String, Option<String>)>, AppError> {
+        let name = name.map(str::trim);
+        if let Some(n) = name {
+            if n.is_empty() {
+                return Err(AppError::BadRequest("Group name cannot be empty".to_string()));
+            }
+            let existing: Option<Uuid> = sqlx::query_scalar(
+                "SELECT id FROM groups WHERE tenant_id = $1 AND name = $2 AND id <> $3",
+            )
+            .bind(tenant_id)
+            .bind(n)
+            .bind(group_id)
+            .fetch_optional(&self.pool)
+            .await?;
+            if existing.is_some() {
+                return Err(AppError::Conflict(format!(
+                    "A group named '{}' already exists for this tenant",
+                    n
+                )));
+            }
+        }
+        let row = sqlx::query_as::<_, (String, String, Option<String>)>(
+            r#"
+            UPDATE groups
+            SET name        = COALESCE($3, name),
+                description = CASE WHEN $4 THEN $5 ELSE description END
+            WHERE tenant_id = $1 AND id = $2
+            RETURNING name, uid, description
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(group_id)
+        .bind(name)
+        .bind(description.is_some())
+        .bind(description.flatten())
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row)
+    }
+
     /// Delete a group. Returns true if deleted.
     pub async fn delete(&self, tenant_id: &str, group_id: Uuid) -> Result<bool, AppError> {
         let r = sqlx::query(
