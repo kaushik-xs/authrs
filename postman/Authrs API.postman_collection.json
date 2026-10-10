@@ -100,6 +100,10 @@
     {
       "key": "roleName",
       "value": "Editor"
+    },
+    {
+      "key": "mfaToken",
+      "value": ""
     }
   ],
   "item": [
@@ -340,7 +344,8 @@
                 "value": "{{tenantId}}"
               }
             ],
-            "url": "{{baseUrl}}/oauth/{{provider}}"
+            "url": "{{baseUrl}}/oauth/{{provider}}",
+            "description": "Starts an OAuth sign-in (provider: google | microsoft). Returns { authorizationUrl, state }. Navigate the browser to authorizationUrl; the provider redirects to the tenant's configured redirectUrl with code + state, which the frontend forwards to the callback request."
           }
         },
         {
@@ -376,7 +381,7 @@
                 }
               ]
             },
-            "description": "OAuth provider callback \u2014 receives the authorization code and state from the provider and completes the OAuth flow."
+            "description": "Completes the OAuth sign-in with the code + state the provider sent to redirectUrl. X-Tenant-ID is optional (the tenant comes from state) but must match if sent. Returns the standard login response (sessionToken | mfaRequired | passwordChangeRequired)."
           }
         },
         {
@@ -505,7 +510,21 @@
       "name": "MFA",
       "item": [
         {
-          "name": "Enable MFA",
+          "name": "MFA status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/mfa/status",
+            "description": "Returns { enabled, backupCodesRemaining } for the session's identity."
+          }
+        },
+        {
+          "name": "Enable MFA (start enrollment)",
           "request": {
             "method": "POST",
             "header": [
@@ -514,23 +533,20 @@
                 "value": "Bearer {{sessionToken}}"
               },
               {
-                "key": "X-Tenant-ID",
-                "value": "{{tenantId}}"
-              },
-              {
                 "key": "Content-Type",
                 "value": "application/json"
               }
             ],
+            "url": "{{baseUrl}}/mfa/enable",
+            "description": "Returns { secret, otpauthUrl }. Render otpauthUrl as a QR code in an authenticator app.",
             "body": {
               "mode": "raw",
               "raw": "{}"
-            },
-            "url": "{{baseUrl}}/mfa/enable"
+            }
           }
         },
         {
-          "name": "Verify MFA",
+          "name": "Verify MFA (confirm enrollment)",
           "request": {
             "method": "POST",
             "header": [
@@ -539,23 +555,38 @@
                 "value": "Bearer {{sessionToken}}"
               },
               {
-                "key": "X-Tenant-ID",
-                "value": "{{tenantId}}"
-              },
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/mfa/verify",
+            "description": "Current 6-digit code from the app. Returns { enabled: true, backupCodes } (shown once).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Validate MFA (complete login)",
+          "request": {
+            "method": "POST",
+            "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json"
               }
             ],
+            "url": "{{baseUrl}}/mfa/validate",
+            "description": "Completes a login that returned { mfaRequired, mfaToken }. code = TOTP or backup code. Returns { sessionToken, expiresAt }.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"code\": \"\"\n}"
-            },
-            "url": "{{baseUrl}}/mfa/verify"
+              "raw": "{\n  \"mfaToken\": \"{{mfaToken}}\",\n  \"code\": \"\"\n}"
+            }
           }
         },
         {
-          "name": "Validate MFA",
+          "name": "Disable MFA",
           "request": {
             "method": "POST",
             "header": [
@@ -564,19 +595,38 @@
                 "value": "Bearer {{sessionToken}}"
               },
               {
-                "key": "X-Tenant-ID",
-                "value": "{{tenantId}}"
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/mfa/disable",
+            "description": "Requires a current TOTP or backup code.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Regenerate backup codes",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sessionToken}}"
               },
               {
                 "key": "Content-Type",
                 "value": "application/json"
               }
             ],
+            "url": "{{baseUrl}}/mfa/backup-codes",
+            "description": "Requires a current TOTP or backup code. Returns { backupCodes }.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"code\": \"\"\n}"
-            },
-            "url": "{{baseUrl}}/mfa/validate"
+            }
           }
         }
       ]

@@ -24,12 +24,13 @@ redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 argon2 = "0.5"
 aes-gcm = "0.10"
 base64 = "0.22"
-totp-rs = "5"
+sha2 = "0.10"
+totp-rs = { version = "5", features = ["otpauth"] }
 rand = "0.8"
 uuid = { version = "1", features = ["v4", "serde"] }
 
-# OAuth
-oauth2 = "2"
+# OAuth / OIDC (Google, Microsoft): token exchange + ID-token verification against JWKS
+reqwest = { version = "0.12", features = ["json"] }
 jsonwebtoken = "9"
 
 # Config / env
@@ -64,3 +65,8 @@ path = "src/bin/seed.rs"
 
 [dev-dependencies]
 tokio-test = "0.4"
+# OAuth tests: mock identity provider (token + JWKS endpoints) and form-body parsing.
+wiremock = "0.6"
+url = "2"
+# HTTP end-to-end tests drive the axum router in-process via `ServiceExt::oneshot`.
+tower = { version = "0.4", features = ["util"] }

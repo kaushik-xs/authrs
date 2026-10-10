@@ -107,12 +107,24 @@ impl TenantConfigLoader {
     }
 }
 
+/// Per-tenant OAuth provider config: kv_store group "oauth", key = provider
+/// ("google" | "microsoft").
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OauthConfig {
     pub client_id: String,
     pub client_secret: String,
+    /// Redirect URI registered with the provider — the frontend page that receives
+    /// `code` + `state` and forwards them to `GET /oauth/:provider/callback`.
     pub redirect_url: String,
+    /// Microsoft only: which directory may sign in — "common" (default), "organizations",
+    /// "consumers", or a specific Entra tenant ID (GUID) to restrict to one organization.
+    #[serde(default)]
+    pub tenant: Option<String>,
+    /// Whether a first-time OAuth sign-in may create the identity and/or membership in this
+    /// tenant. Defaults to true; set false to allow only users who already have a membership.
+    #[serde(default)]
+    pub allow_signup: Option<bool>,
 }
 
 #[derive(serde::Deserialize)]

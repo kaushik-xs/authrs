@@ -4,7 +4,9 @@ use crate::domain::identity::Identity;
 use crate::domain::session::SessionPayload;
 use crate::domain::user::{has_valid_identity, User};
 use crate::error::AppError;
-use crate::repo::{force_change_tokens::ForceChangeTokensRepo, groups::GroupsRepo, identities::IdentitiesRepo, identity_tokens::IdentityTokensRepo, membership_invites::MembershipInvitesRepo, password_reset_tokens::PasswordResetTokensRepo, roles::RolesRepo, users::UsersRepo};
+use crate::repo::{force_change_tokens::ForceChangeTokensRepo, groups::GroupsRepo, identities::IdentitiesRepo, identity_tokens::IdentityTokensRepo, membership_invites::MembershipInvitesRepo, mfa::MfaRepo, oauth::OauthRepo, password_reset_tokens::PasswordResetTokensRepo, roles::RolesRepo, users::UsersRepo};
+use crate::services::mfa::MfaService;
+use crate::services::oauth::OauthProfile;
 use crate::services::session::SessionStore;
 use crate::services::tenant_config::{PasswordPolicy, TenantConfigLoader};
 use argon2::password_hash::SaltString;
@@ -25,6 +27,7 @@ fn dedup_chain<T: Eq + std::hash::Hash + Clone>(a: Vec<T>, b: Vec<T>) -> Vec<T> 
 const LOGIN_METHOD_EMAIL_PASSWORD: i32 = 1;
 const LOGIN_METHOD_EMAIL_OTP: i32 = 2;
 const LOGIN_METHOD_USERNAME_PASSWORD: i32 = 4;
+const LOGIN_METHOD_OAUTH: i32 = 5;
 const DEFAULT_LOCK_AFTER_ATTEMPTS: i32 = 5;
 const DEFAULT_LOCK_DURATION_MINS: i64 = 15;
 /// Hard-coded fallback used only if no TTL is injected. The effective default is
@@ -32,6 +35,9 @@ const DEFAULT_LOCK_DURATION_MINS: i64 = 15;
 const DEFAULT_SESSION_TTL_SECS: u64 = 3600; // 1 hour
 const PASSWORD_RESET_TOKEN_TTL_MINS: i64 = 60;
 const FORCE_CHANGE_TOKEN_TTL_MINS: i64 = 15;
+/// Window to complete the second factor after the first one succeeded.
+const MFA_CHALLENGE_TTL_MINS: i64 = 5;
+const MAX_MFA_ATTEMPTS: i32 = 5;
 /// Identity token (tenant-less SSO login → tenant selection) lifetime.
 const IDENTITY_TOKEN_TTL_MINS: i64 = 10;
 
@@ -52,6 +58,9 @@ pub struct AuthService {
     groups_repo: GroupsRepo,
     password_reset_tokens_repo: PasswordResetTokensRepo,
     force_change_tokens_repo: ForceChangeTokensRepo,
+    oauth_repo: OauthRepo,
+    mfa_repo: MfaRepo,
+    mfa_service: MfaService,
     tenant_config: TenantConfigLoader,
     session_store: Arc<dyn SessionStore>,
     sessions_repo: crate::repo::sessions::PostgresSessionStore,
@@ -70,6 +79,9 @@ impl AuthService {
         groups_repo: GroupsRepo,
         password_reset_tokens_repo: PasswordResetTokensRepo,
         force_change_tokens_repo: ForceChangeTokensRepo,
+        oauth_repo: OauthRepo,
+        mfa_repo: MfaRepo,
+        mfa_service: MfaService,
         tenant_config: TenantConfigLoader,
         session_store: Arc<dyn SessionStore>,
         sessions_repo: crate::repo::sessions::PostgresSessionStore,
@@ -84,6 +96,9 @@ impl AuthService {
             groups_repo,
             password_reset_tokens_repo,
             force_change_tokens_repo,
+            oauth_repo,
+            mfa_repo,
+            mfa_service,
             tenant_config,
             session_store,
             sessions_repo,
@@ -125,7 +140,7 @@ impl AuthService {
         if user.username.is_some() {
             methods.push(4); // username+password
         }
-        methods.push(5); // oauth (if user exists with email from oauth)
+        methods.push(LOGIN_METHOD_OAUTH); // oauth (linked provider account)
         methods
     }
 
@@ -285,12 +300,56 @@ impl AuthService {
             return self.issue_force_change_token(tenant_id, user.id).await;
         }
         if identity.mfa_enabled {
+            let mfa_token = generate_session_token();
+            let expires_at = Utc::now() + Duration::minutes(MFA_CHALLENGE_TTL_MINS);
+            self.mfa_repo
+                .create_challenge(&mfa_token, tenant_id, user.id, expires_at)
+                .await?;
             return Ok(LoginResult::MfaRequired {
-                mfa_token: Uuid::new_v4().to_string(),
+                mfa_token,
                 user_id: user.id,
             });
         }
         self.do_create_session(tenant_id, user, ip, user_agent).await
+    }
+
+    /// Second step of an MFA login: redeem the challenge from `MfaRequired` with a TOTP or
+    /// backup code. Wrong codes count toward both the challenge's attempt limit and the
+    /// identity's global lockout, so the second factor cannot be brute-forced by repeating
+    /// the first.
+    pub async fn complete_mfa_login(
+        &self,
+        mfa_token: &str,
+        code: &str,
+        ip: Option<&str>,
+        user_agent: Option<&str>,
+    ) -> Result<LoginResult, AppError> {
+        let challenge = self
+            .mfa_repo
+            .get_challenge(mfa_token)
+            .await?
+            .ok_or_else(|| AppError::Unauthorized("Invalid or expired MFA token".to_string()))?;
+        if challenge.attempt_count >= MAX_MFA_ATTEMPTS {
+            self.mfa_repo.delete_challenge(mfa_token).await?;
+            return Err(AppError::Unauthorized("Too many attempts. Sign in again.".to_string()));
+        }
+        let user = self
+            .users_repo
+            .get_by_id(&challenge.tenant_id, challenge.user_id)
+            .await?
+            .ok_or_else(|| AppError::Unauthorized("Invalid or expired MFA token".to_string()))?;
+        let identity = self.load_identity(user.identity_id).await?;
+        Self::check_gates(&user, &identity)?;
+        if !self.mfa_service.verify(&identity, code).await? {
+            self.mfa_repo.increment_challenge_attempts(mfa_token).await?;
+            self.register_failed_attempt(&identity).await?;
+            return Err(AppError::Unauthorized("Invalid MFA code".to_string()));
+        }
+        if !self.mfa_repo.delete_challenge(mfa_token).await? {
+            return Err(AppError::Unauthorized("Invalid or expired MFA token".to_string()));
+        }
+        self.identities_repo.clear_failed_attempts(identity.id).await?;
+        self.do_create_session(&challenge.tenant_id, &user, ip, user_agent).await
     }
 
     async fn do_password_login(
@@ -416,6 +475,101 @@ impl AuthService {
         let effective = self.effective_login_methods(tenant_id, user.id, &user).await?;
         if !effective.contains(&LOGIN_METHOD_EMAIL_OTP) {
             return Err(AppError::Forbidden("Email OTP login is not allowed for your account".to_string()));
+        }
+        self.finalize_login(tenant_id, &user, &identity, ip, user_agent).await
+    }
+
+    /// Login (or first-time sign-in) with a verified OAuth provider profile. Resolves the
+    /// global identity — linked provider account, else auto-link by a provider-VERIFIED email,
+    /// else a fresh identity — then ensures a membership in `tenant_id` (when `allow_signup`)
+    /// and runs the standard gates / force-change / MFA tail.
+    pub async fn login_oauth(
+        &self,
+        tenant_id: &str,
+        provider: &str,
+        profile: &OauthProfile,
+        allow_signup: bool,
+        ip: Option<&str>,
+        user_agent: Option<&str>,
+    ) -> Result<LoginResult, AppError> {
+        // Only an email the provider vouches for can satisfy the domain allowlist or be used
+        // to link to / reserve a global email handle.
+        let verified_email = profile.email.as_deref().filter(|_| profile.email_verified);
+        match verified_email {
+            Some(e) => self.ensure_email_domain_allowed(tenant_id, e).await?,
+            None => {
+                let has_allowlist = self
+                    .tenant_config
+                    .get_allowed_email_domains(tenant_id)
+                    .await?
+                    .map_or(false, |l| !l.is_empty());
+                if has_allowlist {
+                    return Err(AppError::Forbidden(
+                        "A verified email is required to sign in to this tenant".to_string(),
+                    ));
+                }
+            }
+        }
+
+        let identity = match self
+            .oauth_repo
+            .get_linked_identity(provider, &profile.provider_user_id)
+            .await?
+        {
+            Some(identity_id) => self.load_identity(identity_id).await?,
+            None => {
+                let existing = match verified_email {
+                    Some(e) => self.identities_repo.get_by_email(e).await?,
+                    None => None,
+                };
+                let identity = match existing {
+                    // The provider verified ownership of this email: link to its identity.
+                    Some(i) => i,
+                    None => {
+                        // An unverified email must never attach to (or shadow) an existing
+                        // account; the owner should sign in with their existing method.
+                        if let Some(e) = profile.email.as_deref().filter(|_| !profile.email_verified) {
+                            if self.identities_repo.exists_by_email(e).await? {
+                                return Err(AppError::Forbidden(
+                                    "An account with this email already exists. Sign in with your existing method.".to_string(),
+                                ));
+                            }
+                        }
+                        if !allow_signup {
+                            return Err(AppError::Forbidden("No account exists for this sign-in".to_string()));
+                        }
+                        // Social-only identity: no password; the email handle is set only when verified.
+                        self.identities_repo
+                            .create(
+                                verified_email,
+                                None,
+                                None,
+                                profile.first_name.as_deref(),
+                                profile.last_name.as_deref(),
+                                None,
+                            )
+                            .await?
+                    }
+                };
+                self.oauth_repo
+                    .link(identity.id, provider, &profile.provider_user_id, profile.email.as_deref())
+                    .await?;
+                identity
+            }
+        };
+        if identity.status != "active" {
+            return Err(AppError::Forbidden("Account is not active".to_string()));
+        }
+
+        let user = match self.users_repo.get_membership(identity.id, tenant_id).await? {
+            Some(u) => u,
+            None if allow_signup => self.users_repo.create(&identity, tenant_id, None).await?,
+            None => return Err(AppError::Forbidden("No membership in this tenant".to_string())),
+        };
+        Self::check_gates(&user, &identity)?;
+        let effective = self.effective_login_methods(tenant_id, user.id, &user).await?;
+        if !effective.contains(&LOGIN_METHOD_OAUTH) {
+            return Err(AppError::Forbidden("OAuth login is not allowed for your account".to_string()));
         }
         self.finalize_login(tenant_id, &user, &identity, ip, user_agent).await
     }
@@ -709,7 +863,9 @@ impl AuthService {
         self.identities_repo.update_password(user.identity_id, &password_hash).await?;
         self.force_change_tokens_repo.delete_by_token(change_token).await?;
 
-        self.do_create_session(&tenant_id, &user, ip, user_agent).await
+        // The force-change flag is now cleared; MFA (if enabled) still has to be passed.
+        let identity = self.load_identity(user.identity_id).await?;
+        self.finalize_login(&tenant_id, &user, &identity, ip, user_agent).await
     }
 
     /// Admin create user: at least one of email, (mobile+country_code), or username required.

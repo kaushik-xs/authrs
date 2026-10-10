@@ -201,7 +201,13 @@ async fn force_change_password(
             "sessionToken": session_token,
             "expiresAt": expires_at.to_rfc3339()
         }))),
-        _ => Err(AppError::Internal("Unexpected login state after password change".to_string())),
+        LoginResult::MfaRequired { mfa_token, .. } => Ok(Json(serde_json::json!({
+            "mfaRequired": true,
+            "mfaToken": mfa_token
+        }))),
+        LoginResult::PasswordChangeRequired { .. } => {
+            Err(AppError::Internal("Unexpected login state after password change".to_string()))
+        }
     }
 }
 

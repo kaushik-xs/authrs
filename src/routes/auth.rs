@@ -1,7 +1,7 @@
 //! Authentication routes: login (email/username password, OTP), OAuth.
 
 use axum::{
-    extract::State,
+    extract::{Path, Query, State},
     http::header::AUTHORIZATION,
     routing::{get, post},
     Json, Router,
@@ -13,6 +13,7 @@ use crate::api::tenant::TenantId;
 use crate::email;
 use crate::error::AppError;
 use crate::services::auth::{LoginResult, SignupOutcome};
+use crate::services::oauth::Provider;
 use axum::http::StatusCode;
 use chrono::{Duration, Utc};
 use rand::Rng;
@@ -60,7 +61,7 @@ pub fn identity_router() -> Router<Arc<AppState>> {
 }
 
 /// Render a `LoginResult` to the standard login JSON shape.
-fn login_result_json(result: LoginResult) -> Json<serde_json::Value> {
+pub(crate) fn login_result_json(result: LoginResult) -> Json<serde_json::Value> {
     match result {
         LoginResult::Success { session_token, expires_at } => Json(serde_json::json!({
             "sessionToken": session_token,
@@ -79,8 +80,8 @@ fn login_result_json(result: LoginResult) -> Json<serde_json::Value> {
 
 pub fn oauth_router() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/:provider", axum::routing::get(oauth_redirect))
-        .route("/:provider/callback", axum::routing::get(oauth_callback))
+        .route("/:provider", get(oauth_redirect))
+        .route("/:provider/callback", get(oauth_callback))
 }
 
 #[derive(Deserialize)]
@@ -503,12 +504,80 @@ async fn reset_password(
     ))
 }
 
-async fn oauth_redirect() -> &'static str {
-    "oauth redirect placeholder"
+/// Start an OAuth sign-in for the tenant in X-Tenant-ID. Returns the provider authorize
+/// URL for the client to navigate to, plus the `state` it should keep (e.g. in
+/// sessionStorage) and compare when the provider redirects back.
+async fn oauth_redirect(
+    State(state): State<Arc<AppState>>,
+    tenant_id: TenantId,
+    Path(provider): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let provider = Provider::parse(&provider)?;
+    let (authorization_url, oauth_state) = state
+        .oauth_service
+        .authorization_url(&tenant_id.0, provider)
+        .await?;
+    Ok(Json(serde_json::json!({
+        "authorizationUrl": authorization_url,
+        "state": oauth_state,
+    })))
 }
 
-async fn oauth_callback() -> &'static str {
-    "oauth callback placeholder"
+#[derive(Deserialize)]
+struct OauthCallbackQuery {
+    code: Option<String>,
+    state: Option<String>,
+    error: Option<String>,
+    error_description: Option<String>,
+}
+
+/// The provider's redirect either carries an `error` (user cancelled, consent denied, ...)
+/// or a non-empty `code` + `state`. Returns `(code, state)`.
+fn callback_params(query: OauthCallbackQuery) -> Result<(String, String), AppError> {
+    if let Some(error) = query.error {
+        return Err(AppError::Unauthorized(format!(
+            "OAuth sign-in failed: {}",
+            query.error_description.unwrap_or(error)
+        )));
+    }
+    match (query.code, query.state) {
+        (Some(c), Some(s)) if !c.is_empty() && !s.is_empty() => Ok((c, s)),
+        _ => Err(AppError::BadRequest("code and state are required".to_string())),
+    }
+}
+
+/// Complete an OAuth sign-in. The frontend page at the configured `redirectUrl` forwards
+/// the provider's `code` + `state` here. The tenant comes from the stored state; an
+/// X-Tenant-ID header, if sent, must match it. Returns the standard login JSON.
+async fn oauth_callback(
+    State(state): State<Arc<AppState>>,
+    tenant_id: Option<TenantId>,
+    Path(provider): Path<String>,
+    Query(query): Query<OauthCallbackQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let provider = Provider::parse(&provider)?;
+    let (code, oauth_state) = callback_params(query)?;
+    let callback = state
+        .oauth_service
+        .complete(provider, &code, &oauth_state)
+        .await?;
+    if let Some(TenantId(header_tenant)) = tenant_id {
+        if header_tenant != callback.tenant_id {
+            return Err(AppError::Unauthorized("OAuth state was issued for a different tenant".to_string()));
+        }
+    }
+    let result = state
+        .auth_service
+        .login_oauth(
+            &callback.tenant_id,
+            provider.as_str(),
+            &callback.profile,
+            callback.allow_signup,
+            None,
+            None,
+        )
+        .await?;
+    Ok(login_result_json(result))
 }
 
 pub fn availability_router() -> Router<Arc<AppState>> {
@@ -621,4 +690,59 @@ async fn check_mobile_availability(
         .exists_by_mobile(&country_code, &mobile)
         .await?;
     Ok(Json(serde_json::json!({ "available": !exists })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn q(code: Option<&str>, st: Option<&str>, error: Option<&str>, desc: Option<&str>) -> OauthCallbackQuery {
+        OauthCallbackQuery {
+            code: code.map(String::from),
+            state: st.map(String::from),
+            error: error.map(String::from),
+            error_description: desc.map(String::from),
+        }
+    }
+
+    #[test]
+    fn callback_params_returns_code_and_state() {
+        let (c, s) = callback_params(q(Some("code"), Some("state"), None, None)).unwrap();
+        assert_eq!((c.as_str(), s.as_str()), ("code", "state"));
+    }
+
+    #[test]
+    fn callback_params_requires_non_empty_code_and_state() {
+        for query in [
+            q(None, Some("s"), None, None),
+            q(Some("c"), None, None, None),
+            q(Some(""), Some("s"), None, None),
+            q(Some("c"), Some(""), None, None),
+            q(None, None, None, None),
+        ] {
+            assert!(matches!(callback_params(query), Err(AppError::BadRequest(_))));
+        }
+    }
+
+    #[test]
+    fn callback_params_surfaces_provider_error_even_with_code() {
+        let r = callback_params(q(Some("c"), Some("s"), Some("access_denied"), Some("User cancelled")));
+        assert!(matches!(r, Err(AppError::Unauthorized(ref m)) if m.contains("User cancelled")));
+        let r = callback_params(q(None, None, Some("access_denied"), None));
+        assert!(matches!(r, Err(AppError::Unauthorized(ref m)) if m.contains("access_denied")));
+    }
+
+    #[test]
+    fn callback_query_deserializes_from_provider_redirect() {
+        let query: OauthCallbackQuery =
+            serde_urlencoded_from("code=4%2F0Ab&state=xyz&scope=openid+email&authuser=0&prompt=consent");
+        assert_eq!(query.code.as_deref(), Some("4/0Ab"));
+        assert_eq!(query.state.as_deref(), Some("xyz"));
+        assert!(query.error.is_none());
+    }
+
+    fn serde_urlencoded_from(qs: &str) -> OauthCallbackQuery {
+        let uri: axum::http::Uri = format!("/cb?{qs}").parse().unwrap();
+        axum::extract::Query::<OauthCallbackQuery>::try_from_uri(&uri).unwrap().0
+    }
 }

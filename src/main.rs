@@ -41,6 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         config.builder_tenant_id.clone(),
         config.allowed_roles.clone(),
         config.default_session_ttl_secs,
+        config.mfa_issuer.clone(),
     )?;
     state
         .packages_service

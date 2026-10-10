@@ -4,6 +4,7 @@ use cedar_policy::Schema;
 use std::sync::{Arc, RwLock};
 
 use crate::config::SmtpConfig;
+use crate::crypto::SecretCipher;
 use crate::middleware::tenant::TenantState;
 use crate::policy::schema::{build_schema_str, parse_schema};
 use crate::repo::{
@@ -13,6 +14,8 @@ use crate::repo::{
     identity_tokens::IdentityTokensRepo,
     membership_invites::MembershipInvitesRepo,
     kv_store::KvStoreRepo,
+    mfa::MfaRepo,
+    oauth::OauthRepo,
     otp::OtpRepo,
     packages::PackagesRepo,
     password_reset_tokens::PasswordResetTokensRepo,
@@ -23,6 +26,8 @@ use crate::repo::{
     users::UsersRepo,
 };
 use crate::services::auth::AuthService;
+use crate::services::mfa::MfaService;
+use crate::services::oauth::OauthService;
 use crate::services::packages::PackagesService;
 use crate::services::permissions::PermissionsService;
 use crate::services::session::SessionStore;
@@ -32,6 +37,8 @@ use crate::services::tenant_config::TenantConfigLoader;
 pub struct AppState {
     pub tenant_state: TenantState,
     pub auth_service: AuthService,
+    pub oauth_service: OauthService,
+    pub mfa_service: MfaService,
     pub session_store: Arc<dyn SessionStore>,
     /// Used for audit revoke on logout (and as SessionStore when Redis disabled).
     pub sessions_repo: PostgresSessionStore,
@@ -60,7 +67,9 @@ impl AppState {
         builder_tenant_id: String,
         allowed_roles: Vec<String>,
         default_session_ttl_secs: u64,
+        mfa_issuer: String,
     ) -> Result<Self, crate::error::AppError> {
+        let cipher = SecretCipher::new(kv_encryption_key.as_deref());
         let kv_store = KvStoreRepo::new(pool.clone(), kv_encryption_key)?;
         let tenant_config = TenantConfigLoader::new(kv_store);
         let tenants_repo = TenantsRepo::new(pool.clone());
@@ -76,6 +85,9 @@ impl AppState {
         let groups_repo = GroupsRepo::new(pool.clone());
         let password_reset_tokens_repo = PasswordResetTokensRepo::new(pool.clone());
         let force_change_tokens_repo = ForceChangeTokensRepo::new(pool.clone());
+        let oauth_repo = OauthRepo::new(pool.clone());
+        let mfa_repo = MfaRepo::new(pool.clone());
+        let mfa_service = MfaService::new(mfa_repo.clone(), cipher, mfa_issuer);
         let sessions_repo = PostgresSessionStore::new(pool.clone());
         let session_store: Arc<dyn SessionStore> = if let Some(ref url) = redis_url {
             Arc::new(crate::repo::sessions_redis::RedisSessionStore::new(url)?)
@@ -91,11 +103,15 @@ impl AppState {
             groups_repo,
             password_reset_tokens_repo,
             force_change_tokens_repo,
-            tenant_config,
+            oauth_repo.clone(),
+            mfa_repo,
+            mfa_service.clone(),
+            tenant_config.clone(),
             session_store.clone(),
             sessions_repo.clone(),
             default_session_ttl_secs,
         );
+        let oauth_service = OauthService::new(oauth_repo, tenant_config)?;
         let otp_repo = OtpRepo::new(pool.clone());
 
         // Cedar: start with an empty schema — PackagesService::rebuild_schema() is called
@@ -115,6 +131,8 @@ impl AppState {
         Ok(Self {
             tenant_state,
             auth_service,
+            oauth_service,
+            mfa_service,
             session_store,
             sessions_repo,
             otp_repo,

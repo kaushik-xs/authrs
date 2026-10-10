@@ -1,13 +1,8 @@
 //! KV store repository: get/set/delete by tenant_id, group_key, key.
 //! When sensitive = true, value is encrypted at rest (AES-256-GCM).
 
+use crate::crypto::SecretCipher;
 use crate::error::AppError;
-use aes_gcm::{
-    aead::{Aead, KeyInit},
-    Aes256Gcm,
-};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use rand::RngCore;
 use sqlx::{FromRow, PgPool};
 
 /// Raw row from DB (value may be encrypted).
@@ -26,56 +21,21 @@ pub type KvValue = serde_json::Value;
 #[derive(Clone)]
 pub struct KvStoreRepo {
     pool: PgPool,
-    encryption_key: Option<Vec<u8>>,
+    cipher: SecretCipher,
 }
 
 impl KvStoreRepo {
     pub fn new(pool: PgPool, encryption_key_base64: Option<String>) -> Result<Self, AppError> {
-        let encryption_key = encryption_key_base64
-            .filter(|s| !s.is_empty())
-            .and_then(|s| BASE64.decode(s.trim().as_bytes()).ok())
-            .filter(|k| k.len() == 32);
-        Ok(Self { pool, encryption_key })
-    }
-
-    fn cipher(&self) -> Result<Aes256Gcm, AppError> {
-        let key = self
-            .encryption_key
-            .as_ref()
-            .ok_or_else(|| AppError::Internal("KV_STORE_ENCRYPTION_KEY not set or invalid (need 32-byte base64)".to_string()))?;
-        let key_arr: [u8; 32] = key.as_slice().try_into().map_err(|_| {
-            AppError::Internal("Encryption key length invalid".to_string())
-        })?;
-        Ok(Aes256Gcm::new_from_slice(&key_arr).unwrap())
+        let cipher = SecretCipher::new(encryption_key_base64.as_deref());
+        Ok(Self { pool, cipher })
     }
 
     fn encrypt(&self, plain: &str) -> Result<String, AppError> {
-        let cipher = self.cipher()?;
-        let mut nonce = [0u8; 12];
-        rand::rngs::OsRng.fill_bytes(&mut nonce);
-        let nonce_arr = aes_gcm::Nonce::from_slice(&nonce);
-        let ciphertext = cipher
-            .encrypt(nonce_arr, plain.as_bytes())
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-        let mut out = nonce.to_vec();
-        out.extend(ciphertext);
-        Ok(BASE64.encode(&out))
+        self.cipher.encrypt(plain)
     }
 
     fn decrypt(&self, encrypted_b64: &str) -> Result<String, AppError> {
-        let cipher = self.cipher()?;
-        let bytes = BASE64
-            .decode(encrypted_b64)
-            .map_err(|_| AppError::Internal("Invalid base64 in encrypted value".to_string()))?;
-        if bytes.len() < 12 {
-            return Err(AppError::Internal("Encrypted value too short".to_string()));
-        }
-        let (nonce, ct) = bytes.split_at(12);
-        let nonce_arr = aes_gcm::Nonce::from_slice(nonce);
-        let plain = cipher
-            .decrypt(nonce_arr, ct)
-            .map_err(|_| AppError::Internal("Decryption failed (wrong key or corrupted data)".to_string()))?;
-        String::from_utf8(plain).map_err(|e| AppError::Internal(e.to_string()))
+        self.cipher.decrypt(encrypted_b64)
     }
 
     pub async fn get(

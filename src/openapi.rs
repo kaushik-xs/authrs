@@ -308,8 +308,8 @@ pub fn spec() -> utoipa::openapi::OpenApi {
             PathItem::new(
                 HttpMethod::Get,
                 OperationBuilder::new()
-                    .summary(Some("OAuth redirect"))
-                    .description(Some("Initiates OAuth flow for the given provider (e.g. google, microsoft)."))
+                    .summary(Some("Start OAuth sign-in"))
+                    .description(Some("Starts an authorization-code + PKCE sign-in for the tenant in X-Tenant-ID. Returns { authorizationUrl, state }: navigate the browser to authorizationUrl and keep state to compare when the provider redirects to the tenant's configured redirectUrl. Provider config lives in the tenant kv_store (group \"oauth\", key = provider): { clientId, clientSecret, redirectUrl, tenant?, allowSignup? }."))
                     .parameter(tenant_id_param())
                     .parameter(path_param("provider", "OAuth provider: google, microsoft"))
                     .build(),
@@ -320,21 +320,33 @@ pub fn spec() -> utoipa::openapi::OpenApi {
             PathItem::new(
                 HttpMethod::Get,
                 OperationBuilder::new()
-                    .summary(Some("OAuth callback"))
-                    .description(Some("Callback URL for OAuth provider."))
-                    .parameter(path_param("provider", "OAuth provider"))
+                    .summary(Some("Complete OAuth sign-in"))
+                    .description(Some("Called by the frontend page at redirectUrl with the provider's code and state. The tenant is taken from the stored state (an X-Tenant-ID header, if sent, must match). Verifies the ID token, links or provisions the identity/membership, and returns the standard login response: { sessionToken, expiresAt } | { mfaRequired, mfaToken } | { passwordChangeRequired, changeToken }."))
+                    .parameter(path_param("provider", "OAuth provider: google, microsoft"))
+                    .parameter(query_param("code", "Authorization code from the provider redirect"))
+                    .parameter(query_param("state", "State from the provider redirect (single-use, 10 min TTL)"))
+                    .parameter(query_param("error", "Provider error, if the user cancelled or sign-in failed"))
                     .build(),
             ),
         )
         // MFA
         .path(
+            "/mfa/status",
+            PathItem::new(
+                HttpMethod::Get,
+                OperationBuilder::new()
+                    .summary(Some("MFA status"))
+                    .description(Some("Requires Authorization: Bearer <sessionToken>. Returns { enabled, backupCodesRemaining } for the session's identity (MFA is global across tenants)."))
+                    .build(),
+            ),
+        )
+        .path(
             "/mfa/enable",
             PathItem::new(
                 HttpMethod::Post,
                 OperationBuilder::new()
-                    .summary(Some("Enable MFA"))
-                    .description(Some("Requires Bearer token. Placeholder."))
-                    .parameter(tenant_id_param())
+                    .summary(Some("Start authenticator enrollment"))
+                    .description(Some("Requires Bearer session. Generates a TOTP secret (SHA-1, 6 digits, 30 s) and returns { secret, otpauthUrl }. Render otpauthUrl as a QR code for Google/Microsoft Authenticator, Authy, 1Password etc. MFA is not active until /mfa/verify succeeds. 409 if already enabled."))
                     .build(),
             ),
         )
@@ -343,20 +355,42 @@ pub fn spec() -> utoipa::openapi::OpenApi {
             PathItem::new(
                 HttpMethod::Post,
                 OperationBuilder::new()
-                    .summary(Some("Verify MFA"))
-                    .description(Some("Placeholder."))
-                    .parameter(tenant_id_param())
+                    .summary(Some("Confirm authenticator enrollment"))
+                    .description(Some("Requires Bearer session. Body: { code } — the current 6-digit code from the app. Enables MFA and returns { enabled: true, backupCodes: [...] } (10 single-use codes, shown only once)."))
+                    .request_body(json_body(ObjectBuilder::new().property("code", s()).required("code")))
                     .build(),
-            )
+            ),
         )
         .path(
             "/mfa/validate",
             PathItem::new(
                 HttpMethod::Post,
                 OperationBuilder::new()
-                    .summary(Some("Validate MFA"))
-                    .description(Some("Placeholder."))
-                    .parameter(tenant_id_param())
+                    .summary(Some("Complete MFA login"))
+                    .description(Some("No auth. Body: { mfaToken, code } where mfaToken comes from a login response { mfaRequired: true, mfaToken } (valid 5 min, 5 attempts). code is a 6-digit TOTP code or a backup code. Returns { sessionToken, expiresAt }."))
+                    .request_body(json_body(ObjectBuilder::new().property("mfaToken", s()).property("code", s()).required("mfaToken").required("code")))
+                    .build(),
+            ),
+        )
+        .path(
+            "/mfa/disable",
+            PathItem::new(
+                HttpMethod::Post,
+                OperationBuilder::new()
+                    .summary(Some("Disable MFA"))
+                    .description(Some("Requires Bearer session. Body: { code } (TOTP or backup code). Removes the authenticator and backup codes. Returns { enabled: false }."))
+                    .request_body(json_body(ObjectBuilder::new().property("code", s()).required("code")))
+                    .build(),
+            ),
+        )
+        .path(
+            "/mfa/backup-codes",
+            PathItem::new(
+                HttpMethod::Post,
+                OperationBuilder::new()
+                    .summary(Some("Regenerate backup codes"))
+                    .description(Some("Requires Bearer session. Body: { code } (TOTP or backup code). Replaces all backup codes; returns { backupCodes: [...] }."))
+                    .request_body(json_body(ObjectBuilder::new().property("code", s()).required("code")))
                     .build(),
             ),
         )
@@ -1219,7 +1253,7 @@ mod tests {
         "/login/identity", "/login/select-tenant", "/identity/tenants",
         "/check-availability/email", "/check-availability/username", "/check-availability/mobile",
         "/oauth/{provider}", "/oauth/{provider}/callback",
-        "/mfa/enable", "/mfa/verify", "/mfa/validate",
+        "/mfa/status", "/mfa/enable", "/mfa/verify", "/mfa/validate", "/mfa/disable", "/mfa/backup-codes",
         "/session/validate", "/session/me", "/session/tenants", "/session/change-password",
         "/session/force-change-password", "/session/logout", "/session/logout/all",
         "/session/logout/global", "/session/switch",

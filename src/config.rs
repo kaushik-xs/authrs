@@ -29,6 +29,8 @@ pub struct Config {
     /// Global fallback session TTL in seconds. Used when a tenant has no
     /// `session_policy.absoluteTimeoutMins` set. Defaults to 3600 (1 hour).
     pub default_session_ttl_secs: u64,
+    /// Issuer name shown in authenticator apps for TOTP MFA. Defaults to "Authrs".
+    pub mfa_issuer: String,
 }
 
 /// SMTP settings derived from Config for use in AppState (avoids holding full Config).
@@ -96,6 +98,11 @@ impl Config {
         let smtp_pass = env::var("SMTP_PASS").ok().filter(|s| !s.is_empty());
         let smtp_from = env::var("SMTP_FROM").ok().filter(|s| !s.is_empty());
         let frontend_url = env::var("FRONTEND_URL").ok().filter(|s| !s.is_empty());
+        let mfa_issuer = env::var("MFA_ISSUER")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "Authrs".to_string());
 
         // Platform (builder) access control — required, no defaults.
         let builder_tenant_id = env::var("BUILDER_TENANT_ID")?;
@@ -127,6 +134,7 @@ impl Config {
             builder_tenant_id,
             allowed_roles,
             default_session_ttl_secs,
+            mfa_issuer,
         })
     }
 

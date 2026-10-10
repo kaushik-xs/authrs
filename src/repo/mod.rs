@@ -14,3 +14,4 @@ pub mod packages;
 pub mod otp;
 pub mod sessions;
 pub mod mfa;
+pub mod oauth;
