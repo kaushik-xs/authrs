@@ -100,10 +100,23 @@ impl PackagesService {
     /// - `service:x/package:y`                → all actions in package y
     /// - `service:x/package:y/table:z`        → CRUD + custom actions for table z
     /// - `service:x/package:y/table:z/column` → same as table level
+    /// - `service:x/package:y/query:q`        → the built-in query actions (`run`)
     pub async fn get_actions_for_resource(
         &self,
         resource: &str,
     ) -> Result<Vec<(String, String)>, AppError> {
+        // A query resource only ever takes the built-in query actions.
+        if resource
+            .rsplit('/')
+            .next()
+            .is_some_and(|s| s.starts_with("query:"))
+        {
+            return Ok(crate::policy::schema::QUERY_ACTIONS
+                .iter()
+                .map(|a| (a.to_string(), resource.to_string()))
+                .collect());
+        }
+
         let (package_id, table_name) = parse_resource_scope(resource);
 
         // Preserve the service prefix (e.g. "service:core") so we can build full resource paths.

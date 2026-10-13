@@ -70,7 +70,17 @@ async fn list_actions(
             .cmp(b["packageId"].as_str().unwrap_or(""))
     });
 
-    Ok(Json(serde_json::json!({ "packages": packages })))
+    // Built-in actions are declared by the schema itself, not by any package, so they are listed
+    // separately with the resource type they apply to.
+    let builtin_actions: Vec<serde_json::Value> = crate::policy::schema::QUERY_ACTIONS
+        .iter()
+        .map(|a| serde_json::json!({ "action": a, "resourceType": "query" }))
+        .collect();
+
+    Ok(Json(serde_json::json!({
+        "packages": packages,
+        "builtinActions": builtin_actions
+    })))
 }
 
 async fn sync_package(

@@ -4,3 +4,4 @@ pub mod domain;
 pub mod schema;
 pub mod compiler;
 pub mod engine;
+pub mod resource;

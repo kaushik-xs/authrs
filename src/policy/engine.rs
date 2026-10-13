@@ -1,10 +1,14 @@
 //! Cedar authorization engine: builds entities and evaluates requests.
 
+use std::collections::{HashMap, HashSet};
+
 use cedar_policy::{
-    Authorizer, Context, Decision, Entities, Entity, EntityUid, PolicySet, Request, Schema,
+    Authorizer, Context, Decision, Entities, Entity, EntityUid, PolicySet, Request,
+    RestrictedExpression, Schema,
 };
 use uuid::Uuid;
 
+use crate::policy::resource;
 use crate::policy::schema::to_pascal_case;
 
 pub struct AuthzRequest<'a> {
@@ -118,23 +122,12 @@ fn action_uid(verb: &str) -> Result<EntityUid, ()> {
         .map_err(|_| ())
 }
 
-fn resource_root_uid(resource: &str) -> Result<EntityUid, ()> {
-    let segments: Vec<&str> = resource.split('/').collect();
-    let last = segments.last().copied().unwrap_or(resource);
-    let entity_type = if last.starts_with("column:") {
-        "Column"
-    } else if last.starts_with("table:") {
-        "Table"
-    } else if last.starts_with("package:") {
-        "Package"
-    } else {
-        "Service"
-    };
-    let id = segments
-        .iter()
-        .map(|s| s.splitn(2, ':').nth(1).unwrap_or(s))
-        .collect::<Vec<_>>()
-        .join("/");
+fn resource_root_uid(resource_path: &str) -> Result<EntityUid, ()> {
+    let segments: Vec<&str> = resource_path.split('/').collect();
+    resource_uid(resource::entity_type(resource_path), &resource::entity_id(&segments))
+}
+
+fn resource_uid(entity_type: &str, id: &str) -> Result<EntityUid, ()> {
     format!("AuthRS::{}::\"{}\"", entity_type, id)
         .parse()
         .map_err(|_| ())
@@ -153,40 +146,187 @@ fn build_user_entity(user_id: Uuid, role_names: &[String]) -> Entity {
 
 /// Builds the full ancestor chain for a resource path.
 /// "service:core/package:manufacturing_core/table:materials/column:material_name"
-/// produces four Entity objects: Service, Package, Table, Column — each pointing to its parent.
-fn build_resource_chain(resource: &str) -> Vec<Entity> {
-    let type_names = ["Service", "Package", "Table", "Column"];
-    let raw_segments: Vec<&str> = resource.split('/').collect();
-    let id_segments: Vec<&str> = raw_segments
-        .iter()
-        .map(|s| s.splitn(2, ':').nth(1).unwrap_or(s))
-        .collect();
+/// produces four Entity objects: Service, Package, Table, Column — each pointing to its parent
+/// (when the schema allows that membership). Each entity's type comes from its segment prefix,
+/// matching [`resource_root_uid`], and carries a `path` attribute (the prefixed path up to and
+/// including that segment) that wildcard policies match with `like`.
+fn build_resource_chain(resource_path: &str) -> Vec<Entity> {
+    let raw_segments: Vec<&str> = resource_path.split('/').collect();
 
     let mut entities = Vec::new();
+    let mut parent: Option<(&str, EntityUid)> = None;
 
-    for (i, id_seg) in id_segments.iter().enumerate() {
-        let _ = id_seg; // used below via id_segments[..=i]
-        let type_name = type_names.get(i).copied().unwrap_or("Service");
-        let full_id = id_segments[..=i].join("/");
-        let uid: EntityUid = match format!("AuthRS::{}::\"{}\"", type_name, full_id).parse() {
+    for i in 0..raw_segments.len() {
+        let entity_type = resource::segment_entity_type(raw_segments[i]);
+        let uid = match resource_uid(entity_type, &resource::entity_id(&raw_segments[..=i])) {
             Ok(u) => u,
+            Err(_) => {
+                parent = None;
+                continue;
+            }
+        };
+
+        let parents: HashSet<EntityUid> = parent
+            .take()
+            .filter(|(parent_type, _)| resource::allows_parent(entity_type, parent_type))
+            .map(|(_, uid)| uid)
+            .into_iter()
+            .collect();
+
+        let attrs = HashMap::from([(
+            "path".to_string(),
+            RestrictedExpression::new_string(raw_segments[..=i].join("/")),
+        )]);
+        match Entity::new(uid.clone(), attrs, parents) {
+            Ok(entity) => entities.push(entity),
             Err(_) => continue,
-        };
-
-        let parents: std::collections::HashSet<EntityUid> = if i > 0 {
-            let parent_type = type_names[i - 1];
-            let parent_id = id_segments[..i].join("/");
-            format!("AuthRS::{}::\"{}\"", parent_type, parent_id)
-                .parse()
-                .ok()
-                .into_iter()
-                .collect()
-        } else {
-            std::collections::HashSet::new()
-        };
-
-        entities.push(Entity::new_no_attrs(uid, parents));
+        }
+        parent = Some((entity_type, uid));
     }
 
     entities
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::policy::compiler::compile;
+    use crate::policy::domain::{Effect, PermissionDocument, PermissionStatement};
+    use crate::policy::schema::{build_schema_str, parse_schema};
+
+    fn schema() -> Schema {
+        let tables = vec![("orders_pkg".to_string(), "orders".to_string())];
+        parse_schema(&build_schema_str(&tables, &[])).expect("schema")
+    }
+
+    fn policies(effect: Effect, actions: &[&str], resources: &[&str]) -> PolicySet {
+        let doc = PermissionDocument {
+            version: "1.0".into(),
+            statements: vec![PermissionStatement {
+                sid: "s".into(),
+                effect,
+                principals: vec!["*".into()],
+                actions: actions.iter().map(|a| a.to_string()).collect(),
+                resources: resources.iter().map(|r| r.to_string()).collect(),
+                conditions: vec![],
+            }],
+        };
+        compile(&doc, "p").expect("compile")
+    }
+
+    fn allowed(set: &PolicySet, action: &str, resource: &str) -> bool {
+        let req = AuthzRequest {
+            user_id: Uuid::nil(),
+            role_names: &[],
+            action,
+            resource,
+            context: serde_json::json!({}),
+        };
+        matches!(authorize(&req, set, &schema()), Decision::Allow)
+    }
+
+    const SAMPLE: &str = "service:core/package:_default/query:sample";
+
+    #[test]
+    fn exact_query_resource_matches_only_that_query() {
+        let set = policies(Effect::Allow, &["run"], &[SAMPLE]);
+        assert!(allowed(&set, "run", SAMPLE));
+        assert!(!allowed(
+            &set,
+            "run",
+            "service:core/package:_default/query:other"
+        ));
+    }
+
+    #[test]
+    fn query_wildcard_matches_every_query_in_the_package_only() {
+        let set = policies(
+            Effect::Allow,
+            &["run"],
+            &["service:core/package:_default/query:*"],
+        );
+        assert!(allowed(&set, "run", SAMPLE));
+        assert!(allowed(
+            &set,
+            "run",
+            "service:core/package:_default/query:test"
+        ));
+        assert!(!allowed(
+            &set,
+            "run",
+            "service:core/package:other/query:sample"
+        ));
+        assert!(!allowed(
+            &set,
+            "run",
+            "service:core/package:_default/table:orders"
+        ));
+        assert!(!allowed(
+            &set,
+            "run",
+            "service:other/package:_default/query:sample"
+        ));
+    }
+
+    #[test]
+    fn builtin_run_applies_to_queries_only() {
+        let set = policies(Effect::Allow, &["run"], &["*"]);
+        assert!(allowed(&set, "run", SAMPLE));
+        assert!(!allowed(&set, "run", "service:core/package:orders_pkg/table:orders"));
+        assert!(!allowed(&set, "run", "service:core/package:orders_pkg"));
+    }
+
+    #[test]
+    fn prefix_wildcard_covers_everything_below() {
+        let set = policies(Effect::Allow, &["run", "getOrders"], &["service:core/*"]);
+        assert!(allowed(&set, "run", SAMPLE));
+        assert!(allowed(
+            &set,
+            "getOrders",
+            "service:core/package:orders_pkg/table:orders"
+        ));
+        assert!(!allowed(
+            &set,
+            "getOrders",
+            "service:billing/package:orders_pkg/table:orders"
+        ));
+    }
+
+    #[test]
+    fn star_matches_any_resource_and_action_must_still_match() {
+        let set = policies(Effect::Allow, &["run"], &["*"]);
+        assert!(allowed(&set, "run", SAMPLE));
+        assert!(!allowed(
+            &set,
+            "getOrders",
+            "service:core/package:orders_pkg/table:orders"
+        ));
+    }
+
+    #[test]
+    fn wildcard_deny_overrides_exact_allow() {
+        let mut set = policies(Effect::Allow, &["run"], &[SAMPLE]);
+        for p in policies(
+            Effect::Deny,
+            &["run"],
+            &["service:core/package:_default/query:*"],
+        )
+        .policies()
+        {
+            set.add(p.clone()).unwrap();
+        }
+        assert!(!allowed(&set, "run", SAMPLE));
+    }
+
+    #[test]
+    fn table_and_column_resources_still_match_exactly() {
+        let table = "service:core/package:orders_pkg/table:orders";
+        let set = policies(Effect::Allow, &["getOrders"], &[table]);
+        assert!(allowed(&set, "getOrders", table));
+        assert!(!allowed(
+            &set,
+            "getOrders",
+            "service:core/package:orders_pkg/table:orders/column:total"
+        ));
+    }
 }

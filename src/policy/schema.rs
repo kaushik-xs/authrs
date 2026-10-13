@@ -15,6 +15,12 @@ pub const CRUD_VERBS: [&str; 7] =
 pub const EXTENSIBLE_VERBS: [&str; 3] =
     ["getExtensibleFields", "putExtensibleFields", "deleteExtensibleFields"];
 
+/// Built-in actions on `Query` resources. They are always declared, independent of any package
+/// sync, because they belong to the resource type rather than to a package: architect-sdk checks
+/// `run` on `service:<svc>/package:<pkg>/query:<id>` for every saved query, including standalone
+/// (`_default`) ones that no package registers.
+pub const QUERY_ACTIONS: [&str; 1] = ["run"];
+
 /// Converts a snake_case table name to PascalCase for action names.
 /// e.g. "bom_materials" -> "BomMaterials", "materials" -> "Materials"
 pub fn to_pascal_case(s: &str) -> String {
@@ -52,7 +58,7 @@ pub fn build_schema_str(
     package_tables: &[(String, String)],
     custom_actions: &[(String, String)],
 ) -> String {
-    let resource_types = "[Service, Package, Table, Column]";
+    let resource_types = "[Service, Package, Table, Column, Query]";
     let applies_to = format!(
         "appliesTo {{ principal: [User], resource: {resource_types} }}"
     );
@@ -66,9 +72,21 @@ pub fn build_schema_str(
         }
     }
 
+    // Built-in query actions, scoped to Query resources only.
+    for action_name in QUERY_ACTIONS {
+        action_lines.push(format!(
+            r#"  action "{action_name}" appliesTo {{ principal: [User], resource: [Query] }};"#
+        ));
+    }
+
     // Per-package actions: genuine custom actions plus the derived extensible-fields
-    // actions, which are persisted in `_auth_package_actions` during sync.
-    for (_, action_name) in custom_actions {
+    // actions, which are persisted in `_auth_package_actions` during sync. A custom action
+    // sharing a built-in's name is skipped: the built-in declaration wins (Cedar rejects an
+    // action declared twice).
+    for (_, action_name) in custom_actions
+        .iter()
+        .filter(|(_, a)| !QUERY_ACTIONS.contains(&a.as_str()))
+    {
         action_lines.push(format!(
             r#"  action "{action_name}" {applies_to};"#
         ));
@@ -82,10 +100,11 @@ pub fn build_schema_str(
         r#"namespace AuthRS {{
   entity User in [Role];
   entity Role;
-  entity Service;
-  entity Package in [Service];
-  entity Table in [Package];
-  entity Column in [Table];
+  entity Service = {{ path: String }};
+  entity Package in [Service] = {{ path: String }};
+  entity Table in [Package] = {{ path: String }};
+  entity Column in [Table] = {{ path: String }};
+  entity Query in [Package] = {{ path: String }};
 {actions}
 }}"#,
         actions = action_lines.join("\n")
@@ -140,6 +159,23 @@ mod tests {
         // CRUD still derived for every table.
         assert!(schema.contains(r#"action "getContacts""#));
         assert!(schema.contains(r#"action "getNotes""#));
+        parse_schema(&schema).expect("schema must parse");
+    }
+
+    #[test]
+    fn schema_always_declares_builtin_query_actions() {
+        let schema = build_schema_str(&[], &[]);
+        assert!(schema.contains(
+            r#"action "run" appliesTo { principal: [User], resource: [Query] };"#
+        ));
+        parse_schema(&schema).expect("schema must parse");
+    }
+
+    #[test]
+    fn custom_action_named_like_a_builtin_does_not_break_the_schema() {
+        let custom = vec![("_default".to_string(), "run".to_string())];
+        let schema = build_schema_str(&[], &custom);
+        assert_eq!(schema.matches(r#"action "run""#).count(), 1);
         parse_schema(&schema).expect("schema must parse");
     }
 }

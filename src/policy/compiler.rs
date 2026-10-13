@@ -6,6 +6,7 @@ use serde_json::json;
 
 use crate::error::AppError;
 use crate::policy::domain::{Condition, Effect, PermissionDocument, PermissionStatement};
+use crate::policy::resource;
 
 pub fn compile(doc: &PermissionDocument, permission_db_id: &str) -> Result<PolicySet, AppError> {
     let mut set = PolicySet::new();
@@ -44,7 +45,12 @@ fn build_cedar_json(
     };
     let principal_clause = parse_principal(principal);
     let resource_clause = parse_resource(resource);
-    let conditions = build_conditions(&stmt.conditions);
+    let mut conditions = build_conditions(&stmt.conditions);
+    if resource::is_wildcard(resource) && resource != "*" {
+        if let Some(list) = conditions.as_array_mut() {
+            list.push(resource_like_condition(resource));
+        }
+    }
 
     json!({
         "effect": effect,
@@ -77,27 +83,29 @@ fn parse_principal(principal: &str) -> serde_json::Value {
 
 /// "service:core/package:manufacturing_core/table:materials/column:material_name"
 /// → { op: "==", entity: { type: "Column", id: "core/manufacturing_core/materials/material_name" } }
-fn parse_resource(resource: &str) -> serde_json::Value {
-    let segments: Vec<&str> = resource.split('/').collect();
-    let last = segments.last().copied().unwrap_or(resource);
-    let entity_type = if last.starts_with("column:") {
-        "AuthRS::Column"
-    } else if last.starts_with("table:") {
-        "AuthRS::Table"
-    } else if last.starts_with("package:") {
-        "AuthRS::Package"
-    } else {
-        "AuthRS::Service"
-    };
-
-    // Strip the type prefix from each segment to build the canonical id
-    let id = segments
-        .iter()
-        .map(|s| s.splitn(2, ':').nth(1).unwrap_or(s))
-        .collect::<Vec<_>>()
-        .join("/");
-
+/// A wildcard resource (any `*`) → { op: "All" }; the match itself is the `like` condition
+/// added by [`resource_like_condition`].
+fn parse_resource(resource_path: &str) -> serde_json::Value {
+    if resource::is_wildcard(resource_path) {
+        return json!({ "op": "All" });
+    }
+    let segments: Vec<&str> = resource_path.split('/').collect();
+    let entity_type = format!("AuthRS::{}", resource::entity_type(resource_path));
+    let id = resource::entity_id(&segments);
     json!({ "op": "==", "entity": { "type": entity_type, "id": id } })
+}
+
+/// `when { resource.path like "<pattern>" }` for a wildcard resource.
+fn resource_like_condition(resource_path: &str) -> serde_json::Value {
+    json!({
+        "kind": "when",
+        "body": {
+            "like": {
+                "left": { ".": { "left": { "Var": "resource" }, "attr": "path" } },
+                "pattern": resource::like_pattern(resource_path)
+            }
+        }
+    })
 }
 
 fn build_conditions(conditions: &[Condition]) -> serde_json::Value {
