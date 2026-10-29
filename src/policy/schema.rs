@@ -21,6 +21,16 @@ pub const EXTENSIBLE_VERBS: [&str; 3] =
 /// (`_default`) ones that no package registers.
 pub const QUERY_ACTIONS: [&str; 1] = ["run"];
 
+/// Built-in actions on `View` resources, declared like [`QUERY_ACTIONS`]. architect-sdk checks
+/// them on `service:<svc>/package:<pkg>/view:<id>`: `get` for reading a view-backed API entity
+/// and its materialized-refresh status, `refresh` for refreshing a materialized view.
+pub const VIEW_ACTIONS: [&str; 2] = ["get", "refresh"];
+
+/// Whether `action` is a built-in (resource-type) action rather than a package-registered one.
+pub fn is_builtin_action(action: &str) -> bool {
+    QUERY_ACTIONS.contains(&action) || VIEW_ACTIONS.contains(&action)
+}
+
 /// Converts a snake_case table name to PascalCase for action names.
 /// e.g. "bom_materials" -> "BomMaterials", "materials" -> "Materials"
 pub fn to_pascal_case(s: &str) -> String {
@@ -58,7 +68,7 @@ pub fn build_schema_str(
     package_tables: &[(String, String)],
     custom_actions: &[(String, String)],
 ) -> String {
-    let resource_types = "[Service, Package, Table, Column, Query]";
+    let resource_types = "[Service, Package, Table, Column, Query, View]";
     let applies_to = format!(
         "appliesTo {{ principal: [User], resource: {resource_types} }}"
     );
@@ -79,13 +89,20 @@ pub fn build_schema_str(
         ));
     }
 
+    // Built-in view actions, scoped to View resources only.
+    for action_name in VIEW_ACTIONS {
+        action_lines.push(format!(
+            r#"  action "{action_name}" appliesTo {{ principal: [User], resource: [View] }};"#
+        ));
+    }
+
     // Per-package actions: genuine custom actions plus the derived extensible-fields
     // actions, which are persisted in `_auth_package_actions` during sync. A custom action
     // sharing a built-in's name is skipped: the built-in declaration wins (Cedar rejects an
     // action declared twice).
     for (_, action_name) in custom_actions
         .iter()
-        .filter(|(_, a)| !QUERY_ACTIONS.contains(&a.as_str()))
+        .filter(|(_, a)| !is_builtin_action(a))
     {
         action_lines.push(format!(
             r#"  action "{action_name}" {applies_to};"#
@@ -105,6 +122,7 @@ pub fn build_schema_str(
   entity Table in [Package] = {{ path: String }};
   entity Column in [Table] = {{ path: String }};
   entity Query in [Package] = {{ path: String }};
+  entity View in [Package] = {{ path: String }};
 {actions}
 }}"#,
         actions = action_lines.join("\n")
@@ -167,6 +185,18 @@ mod tests {
         let schema = build_schema_str(&[], &[]);
         assert!(schema.contains(
             r#"action "run" appliesTo { principal: [User], resource: [Query] };"#
+        ));
+        parse_schema(&schema).expect("schema must parse");
+    }
+
+    #[test]
+    fn schema_always_declares_builtin_view_actions() {
+        let schema = build_schema_str(&[], &[]);
+        assert!(schema.contains(
+            r#"action "get" appliesTo { principal: [User], resource: [View] };"#
+        ));
+        assert!(schema.contains(
+            r#"action "refresh" appliesTo { principal: [User], resource: [View] };"#
         ));
         parse_schema(&schema).expect("schema must parse");
     }

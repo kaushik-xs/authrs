@@ -318,6 +318,44 @@ mod tests {
         assert!(!allowed(&set, "run", SAMPLE));
     }
 
+    const VIEW: &str = "service:core/package:analytics/view:project_journey";
+
+    #[test]
+    fn exact_view_resource_allows_builtin_view_actions() {
+        let set = policies(Effect::Allow, &["get"], &[VIEW]);
+        assert!(allowed(&set, "get", VIEW));
+        assert!(!allowed(&set, "refresh", VIEW));
+        assert!(!allowed(
+            &set,
+            "get",
+            "service:core/package:analytics/view:other"
+        ));
+    }
+
+    #[test]
+    fn view_wildcard_matches_every_view_in_the_package_only() {
+        let set = policies(
+            Effect::Allow,
+            &["get", "refresh"],
+            &["service:core/package:analytics/view:*"],
+        );
+        assert!(allowed(&set, "get", VIEW));
+        assert!(allowed(&set, "refresh", VIEW));
+        assert!(!allowed(
+            &set,
+            "get",
+            "service:core/package:other/view:project_journey"
+        ));
+    }
+
+    #[test]
+    fn builtin_view_actions_apply_to_views_only() {
+        let set = policies(Effect::Allow, &["get", "refresh"], &["*"]);
+        assert!(allowed(&set, "get", VIEW));
+        assert!(!allowed(&set, "get", "service:core/package:orders_pkg/table:orders"));
+        assert!(!allowed(&set, "refresh", SAMPLE));
+    }
+
     #[test]
     fn table_and_column_resources_still_match_exactly() {
         let table = "service:core/package:orders_pkg/table:orders";

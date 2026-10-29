@@ -1167,7 +1167,7 @@ pub fn spec() -> utoipa::openapi::OpenApi {
                 HttpMethod::Get,
                 OperationBuilder::new()
                     .summary(Some("List packages with tables and actions"))
-                    .description(Some("Returns every registered package grouped with its sorted tables and actions, plus builtinActions: actions declared for every tenant without a package sync (e.g. `run` on query resources)."))
+                    .description(Some("Returns every registered package grouped with its sorted tables and actions, plus builtinActions: actions declared for every tenant without a package sync (e.g. `run` on query resources, `get`/`refresh` on view resources)."))
                     .build(),
             ),
         )

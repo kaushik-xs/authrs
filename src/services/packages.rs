@@ -101,6 +101,7 @@ impl PackagesService {
     /// - `service:x/package:y/table:z`        → CRUD + custom actions for table z
     /// - `service:x/package:y/table:z/column` → same as table level
     /// - `service:x/package:y/query:q`        → the built-in query actions (`run`)
+    /// - `service:x/package:y/view:v`         → the built-in view actions (`get`, `refresh`)
     pub async fn get_actions_for_resource(
         &self,
         resource: &str,
@@ -112,6 +113,18 @@ impl PackagesService {
             .is_some_and(|s| s.starts_with("query:"))
         {
             return Ok(crate::policy::schema::QUERY_ACTIONS
+                .iter()
+                .map(|a| (a.to_string(), resource.to_string()))
+                .collect());
+        }
+
+        // Likewise a view resource only ever takes the built-in view actions.
+        if resource
+            .rsplit('/')
+            .next()
+            .is_some_and(|s| s.starts_with("view:"))
+        {
+            return Ok(crate::policy::schema::VIEW_ACTIONS
                 .iter()
                 .map(|a| (a.to_string(), resource.to_string()))
                 .collect());

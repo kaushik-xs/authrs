@@ -75,6 +75,11 @@ async fn list_actions(
     let builtin_actions: Vec<serde_json::Value> = crate::policy::schema::QUERY_ACTIONS
         .iter()
         .map(|a| serde_json::json!({ "action": a, "resourceType": "query" }))
+        .chain(
+            crate::policy::schema::VIEW_ACTIONS
+                .iter()
+                .map(|a| serde_json::json!({ "action": a, "resourceType": "view" })),
+        )
         .collect();
 
     Ok(Json(serde_json::json!({

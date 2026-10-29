@@ -18,6 +18,7 @@ pub fn segment_entity_type(segment: &str) -> &'static str {
         Some("table") => "Table",
         Some("column") => "Column",
         Some("query") => "Query",
+        Some("view") => "View",
         _ => "Service",
     }
 }
@@ -26,7 +27,11 @@ pub fn segment_entity_type(segment: &str) -> &'static str {
 pub fn allows_parent(child: &str, parent: &str) -> bool {
     matches!(
         (child, parent),
-        ("Package", "Service") | ("Table", "Package") | ("Column", "Table") | ("Query", "Package")
+        ("Package", "Service")
+            | ("Table", "Package")
+            | ("Column", "Table")
+            | ("Query", "Package")
+            | ("View", "Package")
     )
 }
 
@@ -79,6 +84,10 @@ mod tests {
         assert_eq!(
             entity_type("service:core/package:_default/query:q"),
             "Query"
+        );
+        assert_eq!(
+            entity_type("service:core/package:p/view:v"),
+            "View"
         );
         assert_eq!(entity_type("service:core/package:p/report:r"), "Service");
     }
